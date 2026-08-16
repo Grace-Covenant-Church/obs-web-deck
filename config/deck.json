@@ -1,0 +1,168 @@
+{
+  "grid": {
+    "cols": 5,
+    "rows": 5
+  },
+  "pages": [
+    {
+      "id": "main",
+      "name": "Scenes",
+      "autoScenes": true,
+      "buttons": [
+        {
+          "row": 3,
+          "col": 2,
+          "label": "Mic",
+          "icon": "mic",
+          "color": "#65a30d",
+          "action": {
+            "type": "mute",
+            "input": "Mic/Aux"
+          },
+          "feedback": {
+            "type": "inputMuted",
+            "input": "Mic/Aux",
+            "invert": true
+          }
+        },
+        {
+          "row": 3,
+          "col": 3,
+          "label": "Desktop",
+          "icon": "volume",
+          "color": "#65a30d",
+          "action": {
+            "type": "mute",
+            "input": "Desktop Audio"
+          },
+          "feedback": {
+            "type": "inputMuted",
+            "input": "Desktop Audio",
+            "invert": true
+          }
+        },
+        {
+          "row": 3,
+          "col": 4,
+          "label": "PTZ",
+          "icon": "joystick",
+          "color": "#0f766e",
+          "action": {
+            "type": "page",
+            "page": "ptz"
+          }
+        },
+        {
+          "row": 4,
+          "col": 0,
+          "label": "Stream",
+          "icon": "broadcast",
+          "color": "#be123c",
+          "action": {
+            "type": "stream"
+          },
+          "feedback": {
+            "type": "streaming"
+          }
+        },
+        {
+          "row": 4,
+          "col": 1,
+          "label": "Record",
+          "icon": "record",
+          "color": "#be123c",
+          "action": {
+            "type": "record"
+          },
+          "feedback": {
+            "type": "recording"
+          }
+        },
+        {
+          "row": 4,
+          "col": 2,
+          "label": "Pause",
+          "icon": "pause",
+          "color": "#a16207",
+          "action": {
+            "type": "recordPause"
+          },
+          "feedback": {
+            "type": "recordPaused"
+          }
+        },
+        {
+          "row": 4,
+          "col": 3,
+          "label": "Replay",
+          "icon": "save",
+          "color": "#a16207",
+          "action": {
+            "type": "replay"
+          }
+        },
+        {
+          "row": 4,
+          "col": 4,
+          "label": "Cut",
+          "icon": "cut",
+          "color": "#475569",
+          "action": {
+            "type": "transition"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ptz",
+      "name": "PTZ",
+      "layout": "ptz",
+      "buttons": [
+        {
+          "row": 0,
+          "col": 0,
+          "label": "Wide",
+          "icon": "crosshair",
+          "color": "#b45309",
+          "action": {
+            "type": "ptzPreset",
+            "preset": 1
+          }
+        },
+        {
+          "row": 0,
+          "col": 0,
+          "label": "Podium",
+          "icon": "crosshair",
+          "color": "#b45309",
+          "action": {
+            "type": "ptzPreset",
+            "preset": 2
+          }
+        },
+        {
+          "row": 0,
+          "col": 0,
+          "label": "Left",
+          "icon": "crosshair",
+          "color": "#b45309",
+          "action": {
+            "type": "ptzPreset",
+            "preset": 3
+          }
+        },
+        {
+          "row": 0,
+          "col": 0,
+          "label": "Right",
+          "icon": "crosshair",
+          "color": "#b45309",
+          "action": {
+            "type": "ptzPreset",
+            "preset": 4
+          }
+        }
+      ]
+    }
+  ]
+}

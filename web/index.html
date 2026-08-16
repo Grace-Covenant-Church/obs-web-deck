@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#08090b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>OBS Deck</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/stage.css">
+  <link rel="stylesheet" href="/css/deck.css">
+  <link rel="stylesheet" href="/css/ptz.css">
+  <link rel="stylesheet" href="/css/editor.css">
+</head>
+<body>
+  <div class="app">
+    <section class="stage" id="stage">
+      <video id="preview" autoplay playsinline muted></video>
+      <div class="stage-empty">
+        <span id="stage-empty-text">Waiting for OBS to publish…</span>
+      </div>
+
+      <div class="stage-hud">
+        <div class="hud-left">
+          <span class="pill" id="pill-obs" data-state="off">OBS</span>
+          <span class="pill" id="pill-stream" data-state="off">LIVE</span>
+          <span class="pill" id="pill-record" data-state="off">REC</span>
+        </div>
+        <div class="hud-right">
+          <span class="stat" id="stat-latency">— ms</span>
+          <button class="hud-btn" id="btn-audio" title="Preview audio"></button>
+          <button class="hud-btn" id="btn-full" title="Fullscreen"></button>
+        </div>
+      </div>
+
+      <div class="scene-tag" id="scene-tag"></div>
+    </section>
+
+    <section class="deck">
+      <nav class="bar">
+        <div class="pages" id="pages"></div>
+        <!-- Column width picker, shown only in edit mode. -->
+        <div class="cols" id="cols" hidden role="group" aria-label="Grid columns"></div>
+        <button class="edit-btn" id="btn-edit" title="Edit buttons"></button>
+      </nav>
+
+      <div class="grid-wrap" id="grid-wrap">
+        <div class="grid" id="grid"></div>
+      </div>
+
+      <div class="ptz" id="ptz" hidden>
+        <div class="ptz-main">
+          <div class="stick" id="stick">
+            <div class="stick-ring"></div>
+            <div class="stick-cross"></div>
+            <div class="stick-knob" id="stick-knob"></div>
+            <div class="stick-hint">PAN / TILT</div>
+          </div>
+          <div class="presets" id="presets"></div>
+        </div>
+
+        <!-- Spring-return zoom rocker: hold off centre to keep zooming, let go
+             to stop and snap back. -->
+        <div class="rocker-wrap">
+          <div class="rocker" id="rocker">
+            <div class="rocker-track"></div>
+            <span class="rocker-tick rocker-tick-out">ZOOM OUT</span>
+            <span class="rocker-detent"></span>
+            <span class="rocker-tick rocker-tick-in">ZOOM IN</span>
+            <div class="rocker-knob" id="rocker-knob"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Button editor -->
+  <div class="sheet-scrim" id="scrim" hidden></div>
+  <aside class="sheet" id="sheet" hidden>
+    <header class="sheet-head">
+      <strong id="sheet-title">Edit button</strong>
+      <button class="sheet-x" id="sheet-close">✕</button>
+    </header>
+
+    <div class="sheet-body">
+      <label class="field">
+        <span>Label</span>
+        <input type="text" id="f-label" maxlength="24" placeholder="Cam 1">
+      </label>
+
+      <div class="field">
+        <span>Icon</span>
+        <div class="icon-grid" id="f-icons"></div>
+      </div>
+
+      <div class="field">
+        <span>Colour</span>
+        <div class="swatches" id="f-colors"></div>
+      </div>
+
+      <label class="field" id="w-action">
+        <span>Action</span>
+        <select id="f-action">
+          <option value="">— none —</option>
+          <option value="scene">Switch program scene</option>
+          <option value="preview">Set preview scene</option>
+          <option value="transition">Transition / cut</option>
+          <option value="source">Toggle source visibility</option>
+          <option value="mute">Toggle audio mute</option>
+          <option value="stream">Toggle streaming</option>
+          <option value="record">Toggle recording</option>
+          <option value="recordPause">Pause / resume recording</option>
+          <option value="replay">Save replay buffer</option>
+          <option value="hotkey">OBS hotkey (any keybind)</option>
+          <option value="ptzPreset">PTZ preset recall</option>
+          <option value="page">Switch deck page</option>
+        </select>
+      </label>
+
+      <label class="field" id="w-scene" hidden>
+        <span>Scene</span>
+        <select id="f-scene"></select>
+      </label>
+
+      <label class="field" id="w-source" hidden>
+        <span>Source</span>
+        <select id="f-source"></select>
+      </label>
+
+      <label class="field" id="w-input" hidden>
+        <span>Audio input</span>
+        <select id="f-input"></select>
+      </label>
+
+      <label class="field" id="w-hotkey" hidden>
+        <span>Hotkey</span>
+        <input type="text" id="f-hotkey-filter" placeholder="Filter…" autocomplete="off">
+        <select id="f-hotkey" size="8"></select>
+        <small class="hint">Every OBS keybind appears here, including plugin
+          hotkeys. Prefer a native action above where one exists.</small>
+      </label>
+
+      <label class="field" id="w-preset" hidden>
+        <span>Camera preset slot</span>
+        <input type="number" id="f-preset" min="1" max="64" value="1">
+        <small class="hint">obs-ptz exposes no preset list, so the slot number
+          is yours to assign. Long-press a preset on the PTZ page to store the
+          camera's current position into it.</small>
+      </label>
+
+      <label class="field" id="w-page" hidden>
+        <span>Go to page</span>
+        <select id="f-page"></select>
+      </label>
+
+      <label class="check" id="w-feedback" hidden>
+        <input type="checkbox" id="f-feedback" checked>
+        <span>Light the button up when this is active</span>
+      </label>
+    </div>
+
+    <footer class="sheet-foot">
+      <button class="btn danger" id="btn-clear">Clear</button>
+      <button class="btn" id="btn-cancel">Cancel</button>
+      <button class="btn primary" id="btn-save">Save</button>
+    </footer>
+  </aside>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

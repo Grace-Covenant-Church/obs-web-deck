@@ -1,0 +1,13 @@
+# Built binaries
+/obs-web-deck
+/obs-web-deck-*
+/obs-web-deck.exe
+
+# Lucide package pulled in only to regenerate web/js/icons.js
+/package/
+/lucide-static-*.tgz
+/node_modules/
+
+# Written by the app on first run if absent; keep the shipped defaults but
+# ignore local edits that carry passwords.
+/config/*.tmp

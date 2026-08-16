@@ -1,0 +1,141 @@
+/* The video preview and its heads-up overlay. */
+
+.stage {
+  position: relative;
+  flex: 0 0 auto;
+  aspect-ratio: 16 / 9;
+  /* On a short or landscape screen the 16:9 box would eat the whole viewport;
+     the video letterboxes inside instead of squeezing the controls out. */
+  max-height: 40dvh;
+  min-height: 0;
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: var(--gap) var(--gap) 0;
+}
+
+.stage video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: none;
+  background: #000;
+}
+.stage.has-video video { display: block; }
+
+.stage-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 16px;
+}
+.stage.has-video .stage-empty { display: none; }
+
+.stage-hud {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: linear-gradient(180deg, rgba(0,0,0,.65), transparent);
+  pointer-events: none;
+}
+.hud-left, .hud-right { display: flex; align-items: center; gap: 6px; }
+.hud-right { pointer-events: auto; }
+
+.pill {
+  font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .09em;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: rgba(255,255,255,.07);
+  color: var(--muted);
+  transition: background .15s, color .15s;
+}
+.pill[data-state="on"] { background: var(--ok); color: #06210f; }
+
+/* Streaming and recording are the two states worth catching from across a
+   room, so they pulse rather than sitting static. */
+#pill-stream[data-state="on"],
+#pill-record[data-state="on"] {
+  background: var(--live);
+  color: #fff;
+  animation: pulse 2s ease-in-out infinite;
+}
+.pill[data-state="warn"] { background: #a16207; color: #fff; animation: none; }
+
+@keyframes pulse { 50% { opacity: .55; } }
+
+.stat {
+  font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  background: rgba(0,0,0,.45);
+  padding: 5px 6px;
+  border-radius: 5px;
+}
+.stat[data-warn="true"] { color: #fbbf24; }
+
+.hud-btn {
+  appearance: none;
+  border: 0;
+  background: rgba(0,0,0,.45);
+  color: var(--text);
+  font-size: 14px;
+  width: 28px;
+  height: 26px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.hud-btn:active { background: rgba(255,255,255,.18); }
+
+.scene-tag {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  font: 700 11px/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: .04em;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: rgba(0,0,0,.6);
+  color: #fff;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scene-tag:empty { display: none; }
+
+/* Landscape puts the preview and the deck side by side.
+ *
+ * Portrait is width-bound: the stage spans the screen and its 16:9 ratio sets
+ * the height. Landscape is the other way round - the stage stretches to the
+ * full column height and the ratio sets the width - so the height cap that
+ * protects portrait has to come off here. The deck needs no special casing:
+ * its cell size is derived from whatever box is left over. */
+@media (orientation: landscape) {
+  .app { flex-direction: row; }
+
+  .stage {
+    flex: 0 1 auto;
+    align-self: stretch;
+    max-height: none;
+    /* Never let the preview take so much width that the deck is unusable. */
+    max-width: 60%;
+    margin: var(--gap) 0 var(--gap) var(--gap);
+  }
+
+  .deck {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: var(--gap);
+  }
+}

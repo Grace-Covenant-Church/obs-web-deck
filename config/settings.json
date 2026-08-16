@@ -1,0 +1,69 @@
+{
+  "server": {
+    "port": 8080,
+    "bindAddress": "0.0.0.0"
+  },
+
+  "obs": {
+    "// host": "obs-websocket address. Tools > WebSocket Server Settings in OBS.",
+    "host": "localhost:4455",
+    "// password": "Can also be supplied via the OBS_PASSWORD environment variable, which keeps it out of this file.",
+    "password": "",
+    "reconnectMs": 3000
+  },
+
+  "video": {
+    "// mode": "How the preview reaches this binary:",
+    "//   builtin": "OBS Stream -> WHIP. Lowest latency and fewest moving parts, but it uses up the single Stream output.",
+    "//   mpegts": "OBS Recording -> MPEG-TS over UDP. Leaves the Stream output free for YouTube. H264 + Opus are forwarded without transcoding.",
+    "//   external": "An already-running MediaMTX or similar serves WHEP.",
+    "//   none": "Controls only, no preview.",
+    "mode": "mpegts",
+
+    "// streamPath": "Path segment the preview is published and played on.",
+    "streamPath": "preview",
+
+    "// tsListen": "mode=mpegts only. Point OBS's Recording custom FFmpeg output at udp://127.0.0.1:9000?pkt_size=1316 with container 'mpegts' and audio encoder 'libopus' (browsers cannot decode AAC over WebRTC).",
+    "tsListen": "127.0.0.1:9000",
+
+    "// whipUrl": "mode=builtin only. Point OBS's WHIP stream service at http://127.0.0.1:8080/preview/whip",
+
+    "// externalWhepUrl": "mode=external only. Blank derives it from the request host and externalPort.",
+    "externalWhepUrl": "",
+    "externalPort": 8889
+  },
+
+  "ptz": {
+    "// enabled": "Set true on the machine that has obs-ptz plus PTZ hardware.",
+    "enabled": false,
+
+    "vendorName": "ptz-controls",
+
+    "// deviceId": "Which camera in the obs-ptz dock to drive. 0 = first configured camera.",
+    "deviceId": 0,
+
+    "// speeds": "Maximum pan/tilt/zoom rate at full joystick deflection, 0.0-1.0. Lower these if the camera overshoots when framing.",
+    "panSpeed": 0.5,
+    "tiltSpeed": 0.5,
+    "zoomSpeed": 0.4,
+
+    "// profile": "Maps abstract ops onto obs-ptz vendor requests, taken from the plugin's own signatures:",
+    "//   sig1": "void ptz_move_continuous(int device_id, float pan, float tilt, float zoom, float focus)",
+    "//   sig2": "void ptz_preset_recall(int device_id, int preset_id)",
+    "//   sig3": "void ptz_preset_save(int device_id, int preset_id)",
+    "profile": {
+      "move": {
+        "request": "ptz_move_continuous",
+        "data": { "device_id": "$deviceId", "pan": "$pan", "tilt": "$tilt", "zoom": "$zoom", "focus": 0 }
+      },
+      "presetRecall": {
+        "request": "ptz_preset_recall",
+        "data": { "device_id": "$deviceId", "preset_id": "$preset" }
+      },
+      "presetSave": {
+        "request": "ptz_preset_save",
+        "data": { "device_id": "$deviceId", "preset_id": "$preset" }
+      }
+    }
+  }
+}

@@ -1,0 +1,139 @@
+/* The button editor sheet. */
+
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  z-index: 60;
+}
+
+.sheet {
+  position: fixed;
+  z-index: 61;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-top: 1px solid var(--tile-edge);
+  border-radius: 16px 16px 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.sheet-head,
+.sheet-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  flex: 0 0 auto;
+}
+.sheet-head { justify-content: space-between; border-bottom: 1px solid var(--tile-edge); }
+.sheet-foot { justify-content: flex-end; border-top: 1px solid var(--tile-edge); }
+
+.sheet-x {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > span {
+  font: 700 10px/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field input[type="text"],
+.field input[type="number"],
+.field select {
+  appearance: none;
+  width: 100%;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 11px;
+  /* 16px keeps iOS Safari from zooming the viewport when a field is focused. */
+  font: 500 16px/1.2 ui-sans-serif, system-ui, sans-serif;
+}
+.field select[size] { padding: 4px; }
+
+.hint { color: var(--muted); font: 500 11px/1.4 ui-sans-serif, system-ui, sans-serif; }
+
+.check { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.check input { width: 18px; height: 18px; accent-color: #b45309; }
+
+/* Icon picker: a scrollable tray rather than a long grid, so the sheet's
+   other fields stay reachable without a lot of scrolling past icons. */
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 6px;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 6px;
+  background: #0d1015;
+  border: 1px solid var(--tile-edge);
+  border-radius: 9px;
+}
+
+.icon-choice {
+  appearance: none;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  background: var(--tile);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+.icon-choice[data-on="true"] { border-color: #fff; background: #232a34; }
+.icon-none { color: var(--muted); font-size: 15px; }
+
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch {
+  appearance: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.swatch[data-on="true"] { border-color: #fff; }
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--tile-edge);
+  background: var(--tile);
+  color: var(--text);
+  font: 700 13px/1 ui-sans-serif, system-ui, sans-serif;
+  padding: 11px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.btn.primary { background: #1d4ed8; border-color: #1d4ed8; }
+.btn.danger { background: transparent; color: #f87171; border-color: #7f1d1d; margin-right: auto; }
+
+/* On anything wider than a phone the sheet becomes a side panel, leaving the
+   deck visible while editing. */
+@media (min-width: 640px) {
+  .sheet { left: auto; right: 0; top: 0; width: 420px; max-height: 100dvh; border-radius: 0; }
+}
