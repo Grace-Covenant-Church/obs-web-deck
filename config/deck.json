@@ -1,6 +1,6 @@
 {
   "grid": {
-    "cols": 5,
+    "cols": 4,
     "rows": 5
   },
   "pages": [
@@ -109,6 +109,16 @@
           "color": "#475569",
           "action": {
             "type": "transition"
+          }
+        },
+        {
+          "row": 0,
+          "col": 3,
+          "label": "Test",
+          "color": "#1d4ed8",
+          "action": {
+            "type": "ptzPreset",
+            "preset": 1
           }
         }
       ]
