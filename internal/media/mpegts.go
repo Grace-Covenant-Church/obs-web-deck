@@ -110,6 +110,7 @@ func (s *Server) clearRoom(path string) {
 func (s *Server) ingest(ctx context.Context, conn *net.UDPConn, path string) error {
 	reader := newDatagramReader(ctx, conn)
 	defer reader.Close()
+	// Each attempt starts a new demuxer, so alignment is found again.
 
 	dmx := astits.NewDemuxer(ctx, reader)
 	rm := s.roomFor(path)
@@ -359,10 +360,40 @@ decoupled reader goroutine keeps draining, and drops whole datagrams under
 pressure so what does get through stays TS-aligned.
 */
 type datagramReader struct {
-	ch     chan []byte
-	rest   []byte
-	closed chan struct{}
-	once   sync.Once
+	ch      chan []byte
+	rest    []byte
+	aligned bool
+	closed  chan struct{}
+	once    sync.Once
+}
+
+// tsPacketLen is the fixed MPEG-TS packet size, and tsSync the byte every
+// packet starts with.
+const (
+	tsPacketLen = 188
+	tsSync      = 0x47
+)
+
+/*
+align finds the start of a TS packet in a datagram.
+
+Joining a live stream means the first datagram can begin mid-packet, and the
+demuxer's packet-size autodetection then sees only one sync byte in its first
+read and gives up. Rather than rely on the retry loop to eventually land on a
+clean boundary, the offset is found here: a sync byte with another exactly one
+packet later. Returns -1 when this datagram has no usable boundary.
+*/
+func align(b []byte) int {
+	for i := 0; i+tsPacketLen < len(b); i++ {
+		if b[i] == tsSync && b[i+tsPacketLen] == tsSync {
+			return i
+		}
+	}
+	// A short final datagram may hold a lone packet start.
+	if len(b) > 0 && b[0] == tsSync {
+		return 0
+	}
+	return -1
 }
 
 func newDatagramReader(ctx context.Context, conn *net.UDPConn) *datagramReader {
@@ -400,6 +431,15 @@ func newDatagramReader(ctx context.Context, conn *net.UDPConn) *datagramReader {
 	return r
 }
 
+/*
+Read fills p from as many queued datagrams as are available.
+
+Returning a single datagram per call is valid io.Reader behaviour but starves
+the demuxer's packet-size autodetection, which wants a contiguous run of TS
+packets and fails on a short read when joining a stream already in flight.
+So this blocks for the first datagram and then drains whatever else is already
+buffered, without waiting for more to arrive.
+*/
 func (r *datagramReader) Read(p []byte) (int, error) {
 	if len(r.rest) == 0 {
 		pkt, ok := <-r.ch
@@ -408,8 +448,43 @@ func (r *datagramReader) Read(p []byte) (int, error) {
 		}
 		r.rest = pkt
 	}
+
+	// Discard whatever precedes the first whole packet, once per stream.
+	for !r.aligned {
+		if off := align(r.rest); off >= 0 {
+			r.rest = r.rest[off:]
+			r.aligned = true
+			break
+		}
+		pkt, ok := <-r.ch
+		if !ok {
+			return 0, io.EOF
+		}
+		r.rest = pkt
+	}
+
 	n := copy(p, r.rest)
 	r.rest = r.rest[n:]
+
+	for n < len(p) {
+		if len(r.rest) > 0 {
+			c := copy(p[n:], r.rest)
+			r.rest = r.rest[c:]
+			n += c
+			continue
+		}
+		// Block rather than return short. The demuxer autodetects packet size
+		// from a single read and fails if it gets fewer bytes than it asked
+		// for, which showed up as an intermittent "only one sync byte
+		// detected" on startup. This is a continuous stream, so waiting for
+		// the next datagram is correct; shutdown closes the channel and
+		// surfaces as EOF.
+		pkt, ok := <-r.ch
+		if !ok {
+			return n, nil // drained; the next call reports EOF
+		}
+		r.rest = pkt
+	}
 	return n, nil
 }
 
