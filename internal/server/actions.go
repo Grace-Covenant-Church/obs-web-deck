@@ -19,6 +19,8 @@ func (s *Server) runAction(a config.Action) error {
 		return s.obs.SetPreviewScene(a.Scene)
 	case "transition":
 		return s.obs.Transition()
+	case "crossfade":
+		return s.obs.Crossfade(a.Percent)
 	case "source":
 		return s.obs.ToggleSource(a.Scene, a.Source)
 	case "mute":

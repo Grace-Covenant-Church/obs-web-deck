@@ -7,6 +7,7 @@ import (
 	"github.com/andreykaipov/goobs/api/requests/sceneitems"
 	"github.com/andreykaipov/goobs/api/requests/scenes"
 	"github.com/andreykaipov/goobs/api/requests/stream"
+	"github.com/andreykaipov/goobs/api/requests/transitions"
 )
 
 func (c *Client) SetProgramScene(name string) error {
@@ -41,6 +42,37 @@ func (c *Client) Transition() error {
 	}
 	_, err := obs.Transitions.TriggerStudioModeTransition()
 	return err
+}
+
+// Crossfade holds the studio-mode T-bar part way between program and preview,
+// putting a partial mix of the two on air. 100 releases at full travel, which
+// completes the swap exactly like a transition; 0 returns to program only.
+//
+// OBS applies the mix through the current scene transition, so it needs one
+// that supports manual control (Fade does; Cut, being instant, has nothing to
+// hold part way).
+func (c *Client) Crossfade(percent int) error {
+	obs := c.client()
+	if obs == nil {
+		return errNotConnected
+	}
+	// Same courtesy as Transition: outside studio mode there is no preview
+	// scene to mix in, so this is a no-op rather than an error.
+	if !c.State().StudioMode {
+		return nil
+	}
+	_, err := obs.Transitions.SetTBarPosition(
+		transitions.NewSetTBarPositionParams().
+			WithPosition(crossfadePosition(percent)).
+			WithRelease(true))
+	return err
+}
+
+// crossfadePosition maps 0-100 onto the T-bar's 0.0-1.0 travel, clamping
+// rather than erroring so a hand-edited deck.json cannot produce an
+// out-of-range request.
+func crossfadePosition(percent int) float64 {
+	return float64(min(max(percent, 0), 100)) / 100
 }
 
 func (c *Client) ToggleSource(scene, source string) error {

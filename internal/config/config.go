@@ -158,16 +158,17 @@ type Button struct {
 }
 
 type Action struct {
-	Type   string  `json:"type"`
-	Scene  string  `json:"scene,omitempty"`
-	Source string  `json:"source,omitempty"`
-	Input  string  `json:"input,omitempty"`
-	Hotkey string  `json:"hotkey,omitempty"`
-	Page   string  `json:"page,omitempty"`
-	Preset int     `json:"preset,omitempty"`
-	Pan    float64 `json:"pan,omitempty"`
-	Tilt   float64 `json:"tilt,omitempty"`
-	Zoom   float64 `json:"zoom,omitempty"`
+	Type    string  `json:"type"`
+	Scene   string  `json:"scene,omitempty"`
+	Source  string  `json:"source,omitempty"`
+	Input   string  `json:"input,omitempty"`
+	Hotkey  string  `json:"hotkey,omitempty"`
+	Page    string  `json:"page,omitempty"`
+	Preset  int     `json:"preset,omitempty"`
+	Percent int     `json:"percent,omitempty"`
+	Pan     float64 `json:"pan,omitempty"`
+	Tilt    float64 `json:"tilt,omitempty"`
+	Zoom    float64 `json:"zoom,omitempty"`
 }
 
 type Feedback struct {

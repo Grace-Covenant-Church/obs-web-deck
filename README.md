@@ -299,6 +299,7 @@ scene by hand instead.
 | `scene` | `scene` | Switch program scene |
 | `preview` | `scene` | Set preview scene (studio mode) |
 | `transition` | — | Studio mode cut; no-op otherwise |
+| `crossfade` | `percent` | Hold the studio-mode T-bar `percent` of the way from program to preview, mixing the two on air. 100 completes the swap; 0 returns to program only. Needs a transition that can be held part way (Fade, not Cut); no-op outside studio mode |
 | `source` | `scene`, `source` | Toggle source visibility |
 | `mute` | `input` | Toggle an audio input |
 | `stream` / `record` | — | Toggle streaming / recording |

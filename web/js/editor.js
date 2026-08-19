@@ -27,10 +27,11 @@ const FIELDS = {
   mute:      ['w-input'],
   hotkey:    ['w-hotkey'],
   ptzPreset: ['w-preset'],
+  crossfade: ['w-percent'],
   page:      ['w-page'],
 };
 
-const ALL_FIELDS = ['w-scene', 'w-source', 'w-input', 'w-hotkey', 'w-preset', 'w-page'];
+const ALL_FIELDS = ['w-scene', 'w-source', 'w-input', 'w-hotkey', 'w-preset', 'w-percent', 'w-page'];
 
 const ed = {
   sheet: $('sheet'), scrim: $('scrim'), title: $('sheet-title'),
@@ -38,7 +39,8 @@ const ed = {
   action: $('f-action'), wAction: $('w-action'),
   scene: $('f-scene'), source: $('f-source'), input: $('f-input'),
   hotkey: $('f-hotkey'), hotkeyFilter: $('f-hotkey-filter'),
-  preset: $('f-preset'), page: $('f-page'), feedback: $('f-feedback'),
+  preset: $('f-preset'), percent: $('f-percent'), page: $('f-page'),
+  feedback: $('f-feedback'),
 };
 
 let target = null;   // { row, col, existing } or { preset, existing }
@@ -153,6 +155,7 @@ function fillPickers(existing) {
   fillHotkeys('', a?.hotkey);
   fillSelect(ed.page, (app.cfg?.deck.pages ?? []).map((p) => p.id), a?.page);
   ed.preset.value = a?.preset ?? 1;
+  ed.percent.value = a?.percent ?? 50;
 }
 
 function open() {
@@ -208,6 +211,9 @@ function buildAction() {
   if (t === 'mute') a.input = ed.input.value;
   if (t === 'hotkey') a.hotkey = ed.hotkey.value;
   if (t === 'ptzPreset') a.preset = Number(ed.preset.value);
+  // Clamped here as well as on the server, so the tile label never promises a
+  // percent the T-bar cannot reach.
+  if (t === 'crossfade') a.percent = Math.min(100, Math.max(0, Number(ed.percent.value) || 0));
   if (t === 'page') a.page = ed.page.value;
   return a;
 }
@@ -262,7 +268,9 @@ async function save() {
 }
 
 function defaultLabel(action) {
-  return action.type === 'ptzPreset' ? `P${action.preset}` : action.type;
+  if (action.type === 'ptzPreset') return `P${action.preset}`;
+  if (action.type === 'crossfade') return `Fade ${action.percent}%`;
+  return action.type;
 }
 
 async function clearButton() {

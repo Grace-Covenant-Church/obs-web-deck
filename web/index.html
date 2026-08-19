@@ -107,6 +107,7 @@
           <option value="scene">Switch program scene</option>
           <option value="preview">Set preview scene</option>
           <option value="transition">Transition / cut</option>
+          <option value="crossfade">Crossfade to preview (partial)</option>
           <option value="source">Toggle source visibility</option>
           <option value="mute">Toggle audio mute</option>
           <option value="stream">Toggle streaming</option>
@@ -148,6 +149,15 @@
         <small class="hint">obs-ptz exposes no preset list, so the slot number
           is yours to assign. Long-press a preset on the PTZ page to store the
           camera's current position into it.</small>
+      </label>
+
+      <label class="field" id="w-percent" hidden>
+        <span>Crossfade amount (%)</span>
+        <input type="number" id="f-percent" min="0" max="100" step="5" value="50">
+        <small class="hint">Holds the studio-mode T-bar this far from program
+          toward preview, mixing the two on air. 100 completes the swap like a
+          full transition; 0 returns to program only. Needs a transition that
+          can be held part way, such as Fade.</small>
       </label>
 
       <label class="field" id="w-page" hidden>
