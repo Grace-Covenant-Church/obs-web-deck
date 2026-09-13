@@ -429,7 +429,7 @@ that is not something to leave a thumb's width from the page tabs mid-service.
 
 | Type | Fields | Notes |
 |---|---|---|
-| `scene` | `scene` | Switch program scene. The staged preview scene is left where it is, including when the scene pressed is already on air — in studio mode OBS reaches a program change through preview, so the deck puts preview back afterwards |
+| `scene` | `scene` | Switch program scene, leaving the staged preview scene where it is. A program change in studio mode is a transition, and OBS ends one by putting the scene coming off air into preview; the deck puts the staged scene back once the transition has finished. Pressing the scene already on air does nothing at all — there is no change to make, and the transition it would run is not free with a stinger |
 | `preview` | `scene` | Set preview scene (studio mode) |
 | `transition` | — | Studio mode cut; no-op otherwise |
 | `crossfade` | `percent` | Hold the studio-mode T-bar `percent` of the way from program to preview, mixing the two on air. The mix stays up until something else ends it: another `crossfade`, a `transition`, or a `scene`/`preview` button, each of which drops back to program first because OBS refuses those requests while it is holding a mix. 0 returns to program only and 100 completes the swap. If the current transition cannot be held part way (Cut, Stinger) OBS substitutes Fade for the duration. No-op outside studio mode |
