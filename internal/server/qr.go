@@ -41,14 +41,17 @@ func (s *Server) handleQRPNG(w http.ResponseWriter, r *http.Request) {
 /*
 handleQRPage serves the join screen.
 
-Two variants share one page. The default is a full-screen card meant for a
-browser window on the operator's machine. `?overlay=1` strips the chrome and
-makes the background transparent so the same URL can be dropped straight into
-an OBS Browser Source and parked in a corner of a scene.
+Two variants share one page, and neither carries any text: a QR that has to be
+read by a human is a failed QR, and both of these live on top of something the
+operator is actually looking at. The default fills its window edge to edge, for
+the badge obs-deck parks in the corner of the desktop. `?overlay=1` keeps the
+code on a white plate over a transparent background, so the same URL can be
+dropped into an OBS Browser Source and composited into a scene.
 */
 func (s *Server) handleQRPage(w http.ResponseWriter, r *http.Request) {
-	url, err := s.JoinURL()
-	if err != nil {
+	// Rendering a page whose only content is a QR of an address we cannot
+	// work out would just show a broken image.
+	if _, err := s.JoinURL(); err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
@@ -56,78 +59,51 @@ func (s *Server) handleQRPage(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	fmt.Fprintf(w, qrPage, cssFor(overlay), url, url)
+	if overlay {
+		fmt.Fprintf(w, qrPage, qr.WindowTitle, overlayCSS, overlaySize)
+		return
+	}
+	fmt.Fprintf(w, qrPage, qr.WindowTitle, windowCSS, qr.BadgeSize)
 }
 
-func cssFor(overlay bool) string {
-	if overlay {
-		return overlayCSS
-	}
-	return windowCSS
-}
+// The badge asks for the PNG at its own size so the modules land on whole
+// pixels. The overlay is scaled by whatever the OBS source is sized to, so it
+// asks for something larger to scale up from.
+const overlaySize = 512
 
 const windowCSS = `
-  body {
-    background: #08090b;
-    color: #e8ecf1;
-    display: grid;
-    place-items: center;
-    min-height: 100dvh;
-  }
-  .card {
-    background: #101317;
-    border: 1px solid #262c35;
-    border-radius: 18px;
-    padding: 28px 32px 24px;
-    text-align: center;
-  }
-  h1 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #7c8794; }
-  .hint { color: #7c8794; font-size: 12px; margin-top: 14px; max-width: 320px; }
+  body { background: #fff; }
+  img { width: 100%; height: 100%; }
 `
 
 const overlayCSS = `
-  /* Transparent so an OBS Browser Source composites cleanly over a scene. */
-  body { background: transparent; color: #fff; }
-  .card {
-    background: rgba(0,0,0,.55);
-    border-radius: 14px;
-    padding: 14px;
-    text-align: center;
-    display: inline-block;
+  /* Transparent so an OBS Browser Source composites cleanly over a scene,
+     with the code itself on a plate so it still scans over a dark shot. */
+  body { background: transparent; }
+  img {
+    width: 100%; height: 100%;
+    background: #fff; border-radius: 14px; padding: 3%;
   }
-  h1 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; opacity: .8; }
-  img { width: 190px; height: 190px; }
-  .hint { display: none; }
 `
 
 const qrPage = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OBS Deck — Scan to connect</title>
+<title>%s</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font: 500 14px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  html, body { margin: 0; height: 100%%; overflow: hidden; }
+  /* Nothing here is meant to be clicked, dragged or selected. */
+  body { pointer-events: none; user-select: none; -webkit-user-select: none; }
   img {
-    width: 260px; height: 260px; display: block; margin: 14px auto 0;
-    background: #fff; border-radius: 10px; padding: 10px;
+    display: block; box-sizing: border-box; object-fit: contain;
+    -webkit-user-drag: none;
     /* Nearest-neighbour keeps the modules crisp when scaled. */
     image-rendering: pixelated;
   }
-  .url {
-    margin-top: 14px;
-    font: 700 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #22c55e;
-  }
 %s
 </style>
-</head><body>
-  <div class="card">
-    <h1>Scan to open the deck</h1>
-    <img src="/qr.png?size=512" alt="QR code for %s">
-    <div class="url">%s</div>
-    <p class="hint">Phone must be on the same network. If it will not load,
-      check that the phone is on the same subnet as this machine.</p>
-  </div>
+</head><body oncontextmenu="return false">
+  <img src="/qr.png?size=%d" alt="">
 </body></html>
 `

@@ -9,7 +9,7 @@
 import { send } from './net.js';
 import { app, on } from './state.js';
 import { iconMarkup } from './icons.js';
-import { toast } from './ui.js';
+import { askConfirm, toast } from './ui.js';
 import { openPresetEditor } from './editor.js';
 
 const $ = (id) => document.getElementById(id);
@@ -207,8 +207,9 @@ function presetButton(p) {
     return b;
   }
 
-  // Tap recalls; a long press stores the current position, which is how PTZ
-  // operators expect presets to behave.
+  // Tap recalls; a long press offers to store the current position, which is
+  // how PTZ operators expect presets to behave. `held` marks the hold as
+  // having fired so the lift that ends it does not also recall.
   let held = false;
   let hold = null;
 
@@ -216,9 +217,8 @@ function presetButton(p) {
     held = false;
     hold = setTimeout(() => {
       held = true;
-      navigator.vibrate?.([12, 40, 12]);
-      send({ type: 'ptzPreset', preset: p.action.preset, save: true });
-      toast(`Stored ${p.label || `preset ${p.action.preset}`}`);
+      navigator.vibrate?.([12, 40, 12]); // the hold registered, before the ask
+      askStore(p);
     }, HOLD_MS);
   });
   b.addEventListener('pointerup', () => {
@@ -228,6 +228,24 @@ function presetButton(p) {
   b.addEventListener('pointercancel', () => clearTimeout(hold));
 
   return b;
+}
+
+/** Storing overwrites the slot, and obs-ptz can neither report what was in it
+ *  nor put it back, so the confirm is the operator's only chance to back out of
+ *  a long press they did not mean - mid-show, on a preset they were reaching
+ *  for to recall. */
+async function askStore(p) {
+  const name = p.label || `preset ${p.action.preset}`;
+  const ok = await askConfirm({
+    title: `Store ${name}?`,
+    text: `Slot ${p.action.preset} is overwritten with where the camera is `
+        + `pointing now. The old position cannot be recovered.`,
+    confirm: 'Store',
+  });
+  if (!ok) return;
+
+  send({ type: 'ptzPreset', preset: p.action.preset, save: true });
+  toast(`Stored ${name}`);
 }
 
 /* ---------------- wiring ---------------- */

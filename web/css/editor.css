@@ -137,3 +137,57 @@
 @media (min-width: 640px) {
   .sheet { left: auto; right: 0; top: 0; width: 420px; max-height: 100dvh; border-radius: 0; }
 }
+
+/* Scene gate: which scenes a button works in. Chips rather than a multi-select,
+   which on a phone is a scrolling list that needs a modifier key to use. */
+.scene-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 7px;
+  background: #0d1015;
+  border: 1px solid var(--tile-edge);
+  border-radius: 9px;
+}
+
+.scene-chip {
+  appearance: none;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+  color: var(--muted);
+  font: 600 12px/1 ui-sans-serif, system-ui, sans-serif;
+  padding: 8px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scene-chip[data-on="true"] { background: #b45309; border-color: #b45309; color: #fff; }
+
+/* A gate with nothing selected is a gate that does nothing, so say so where the
+   choice is made rather than letting it save as a no-op. */
+.chips-empty { color: #f59e0b; }
+
+/* Chain steps. The strip is a row of numbers rather than a list of collapsed
+   action summaries: the fields below already show the selected step in full,
+   and a phone-sized sheet has no room to show it twice. */
+.steps { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.step-chip {
+  appearance: none;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  background: var(--tile);
+  border: 1px solid var(--tile-edge);
+  color: var(--muted);
+  font: 700 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.step-chip[data-on="true"] { background: #b45309; border-color: #b45309; color: #fff; }
+.step-chip.step-del { color: #f87171; border-color: #7f1d1d; }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -52,6 +53,23 @@ type VideoSettings struct {
 	// derive it from the request host and ExternalPort.
 	ExternalWhepURL string `json:"externalWhepUrl"`
 	ExternalPort    int    `json:"externalPort"`
+
+	// MaxLagMs is how far the preview may fall behind wall clock before
+	// frames are dropped to catch up, in "mpegts" mode. Negative turns the
+	// guard off and forwards every frame however late it is.
+	MaxLagMs int `json:"maxLagMs"`
+}
+
+// defaultMaxLagMs mirrors media.DefaultMaxLag. It is repeated rather than
+// imported so that config stays a leaf package with no view of the media path.
+const defaultMaxLagMs = 400
+
+// MaxLag is MaxLagMs as a duration; zero means the guard is off.
+func (v VideoSettings) MaxLag() time.Duration {
+	if v.MaxLagMs < 0 {
+		return 0
+	}
+	return time.Duration(v.MaxLagMs) * time.Millisecond
 }
 
 type PTZSettings struct {
@@ -155,10 +173,68 @@ type Button struct {
 	Color    string    `json:"color,omitempty"`
 	Action   Action    `json:"action"`
 	Feedback *Feedback `json:"feedback,omitempty"`
+	Enable   *Enable   `json:"enable,omitempty"`
+}
+
+// Enable gates a button on the active program scene, so a control that is
+// wrong for the scene on air can be switched off rather than left as a
+// mis-tap waiting to happen: the lyrics toggle that belongs to the worship
+// scene, the confidence-monitor cut that only makes sense during the sermon.
+//
+// Nil means always available, which is what every button without the field
+// gets. Evaluation is the phone's - it holds both the deck and the live scene,
+// and the tile has to be dimmed there anyway - so this type is carried through
+// the server rather than acted on by it.
+type Enable struct {
+	// Scenes are the program scenes this button works in. Empty means every
+	// scene, i.e. no gate at all.
+	Scenes []string `json:"scenes,omitempty"`
+
+	// Invert reads Scenes as the scenes to be disabled in instead. "Every
+	// scene except the countdown" is a shorter list than its opposite, and
+	// it keeps working when a scene is added to OBS.
+	Invert bool `json:"invert,omitempty"`
+}
+
+// EnabledIn reports whether this button may be pressed while scene is on
+// program. The phone decides this for itself, on live state this side does not
+// see between broadcasts, so the two evaluate the same rule; keeping the rule
+// itself here, next to the type, is what makes it one rule rather than two
+// implementations that can drift.
+func (b Button) EnabledIn(scene string) bool { return b.Enable.Allows(scene) }
+
+// Allows reports whether scene satisfies the gate.
+//
+// A nil rule allows everything, and so does one with an empty scene list: an
+// empty list is the absence of a gate, not a gate that closes against every
+// scene. Reading it the other way would switch off every button the editor
+// saved with a mode picked and nothing ticked.
+func (e *Enable) Allows(scene string) bool {
+	if e == nil || len(e.Scenes) == 0 {
+		return true
+	}
+	listed := slices.Contains(e.Scenes, scene)
+	if e.Invert {
+		return !listed
+	}
+	return listed
 }
 
 type Action struct {
-	Type    string  `json:"type"`
+	Type string `json:"type"`
+
+	// Steps are run in order when Type is "chain", which is how one tile does
+	// several things: set the preview scene, then hold a crossfade against it.
+	// A step may not itself be a chain.
+	Steps []Action `json:"steps,omitempty"`
+
+	// DelayMs waits before this step runs, for the one thing a chain cannot
+	// otherwise know: OBS answers a transition request the moment it starts,
+	// not when it finishes. Ignored on the first step, and clamped by the
+	// server. Requests already wait for their own reply, so most chains need
+	// none of this.
+	DelayMs int `json:"delayMs,omitempty"`
+
 	Scene   string  `json:"scene,omitempty"`
 	Source  string  `json:"source,omitempty"`
 	Input   string  `json:"input,omitempty"`
@@ -331,6 +407,9 @@ func applyDefaults(s *Settings) {
 	}
 	if s.Video.TSListen == "" {
 		s.Video.TSListen = "127.0.0.1:9000"
+	}
+	if s.Video.MaxLagMs == 0 {
+		s.Video.MaxLagMs = defaultMaxLagMs
 	}
 	if s.PTZ.VendorName == "" {
 		s.PTZ.VendorName = "ptz-controls"

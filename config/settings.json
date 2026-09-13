@@ -24,7 +24,13 @@
     "streamPath": "preview",
 
     "// tsListen": "mode=mpegts only. Point OBS's Recording custom FFmpeg output at udp://127.0.0.1:9000?pkt_size=1316 with container 'mpegts' and audio encoder 'libopus' (browsers cannot decode AAC over WebRTC).",
+    "// tsListen (remote OBS)": "127.0.0.1 only accepts a push from this machine. Use 0.0.0.0:9000 to accept one from any interface, then point OBS at this machine's LAN address - obs-deck prints the URLs to use at startup. There is no authentication on the ingest, so anything on the LAN can push a stream at it.",
     "tsListen": "127.0.0.1:9000",
+
+    "// resolution": "Set OBS to rescale this output to 640x360, or whatever matches your canvas aspect ratio at that width - the rescale stretches rather than letterboxes. A phone preview is for cueing, not for judging focus, and the smaller frame encodes and decodes faster on both ends.",
+
+    "// maxLagMs": "mode=mpegts only. How far the preview may fall behind live before frames are dropped to catch up. Raise it if a slow machine makes the preview stutter; set it negative to forward every frame however late.",
+    "maxLagMs": 400,
 
     "// whipUrl": "mode=builtin only. Point OBS's WHIP stream service at http://127.0.0.1:8080/preview/whip",
 

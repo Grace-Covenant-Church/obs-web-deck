@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -24,6 +25,11 @@ type inbound struct {
 	Type   string         `json:"type"`
 	ID     int            `json:"id,omitempty"`
 	Action *config.Action `json:"action,omitempty"`
+
+	// From names the tile a press came from, so the button's scene gate can be
+	// re-checked here against live state. Absent on presses with no tile
+	// behind them, such as the PTZ strip.
+	From *origin `json:"from,omitempty"`
 
 	Pan    float64 `json:"pan,omitempty"`
 	Tilt   float64 `json:"tilt,omitempty"`
@@ -97,6 +103,10 @@ func (s *Server) dispatch(c *conn, msg inbound) {
 		if msg.Action == nil {
 			return
 		}
+		if why := gateClosed(s.store.Deck(), s.obs.State().ProgramScene, msg.From); why != "" {
+			c.push(map[string]any{"type": "error", "id": msg.ID, "message": why})
+			return
+		}
 		err = s.runAction(*msg.Action)
 	default:
 		return
@@ -105,6 +115,46 @@ func (s *Server) dispatch(c *conn, msg inbound) {
 	if err != nil {
 		c.push(map[string]any{"type": "error", "id": msg.ID, "message": err.Error()})
 	}
+}
+
+// origin identifies the button a press came from.
+type origin struct {
+	Page string `json:"page"`
+	Row  int    `json:"row"`
+	Col  int    `json:"col"`
+}
+
+/* gateClosed reports why a press must not run, or "" to let it through.
+ *
+ * The phone already dims a gated button and refuses the tap, which is where the
+ * operator sees the rule. This is the same rule applied a second time, against
+ * the scene this process knows is on air rather than the one the phone was last
+ * told about - a press sent moments after a scene change, or from a page left
+ * open while the socket was down, would otherwise land on the wrong scene.
+ *
+ * A press whose button cannot be found is allowed: generated autoScenes tiles
+ * exist in no deck, and a button deleted underneath a stale phone can only be
+ * guessed at. Fail open, so an unfindable origin never makes the deck unusable.
+ */
+func gateClosed(deck *config.Deck, scene string, from *origin) string {
+	if from == nil || deck == nil {
+		return ""
+	}
+	for _, p := range deck.Pages {
+		if p.ID != from.Page {
+			continue
+		}
+		for _, b := range p.Buttons {
+			if b.Row != from.Row || b.Col != from.Col || b.EnabledIn(scene) {
+				continue
+			}
+			if scene == "" {
+				return fmt.Sprintf("%q is not available right now", b.Label)
+			}
+			return fmt.Sprintf("%q is not available in %s", b.Label, scene)
+		}
+	}
+	return ""
 }
 
 // ---------- broadcast ----------

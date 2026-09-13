@@ -91,7 +91,7 @@ func main() {
 	defer cancelIngest()
 
 	if set := store.Settings(); set.Video.Mode == "mpegts" {
-		if err := mediaSrv.StartMPEGTS(ctx, set.Video.TSListen, set.Video.StreamPath); err != nil {
+		if err := mediaSrv.StartMPEGTS(ctx, set.Video.TSListen, set.Video.StreamPath, set.Video.MaxLag()); err != nil {
 			log.Fatalf("mpegts: %v", err)
 		}
 	}
@@ -118,18 +118,22 @@ func main() {
 			log.Printf("  OBS WHIP URL:  http://127.0.0.1:%d/%s/whip",
 				set.Server.Port, set.Video.StreamPath)
 		}
+		for _, u := range tsPushURLs(set.Video) {
+			log.Printf("  OBS MPEG-TS URL:  %s", u)
+		}
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("listen: %v", err)
 		}
 	}()
 
-	announce(store, srv, *noQR, *noWindow)
+	closeWindow := announce(srv, *noQR, *noWindow)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 
 	log.Println("shutting down")
+	closeWindow()
 	// Halt the camera before dropping the OBS connection, or it keeps slewing.
 	_ = pan.Stop()
 	obs.Close()
@@ -138,17 +142,21 @@ func main() {
 
 /*
 announce prints the join address as a scannable QR and, on a desktop, opens it
-in a browser window.
+as a badge in the corner of the screen. The returned function closes that badge
+again, and is always safe to call.
 
-The window is a browser rather than a native one on purpose: a GUI toolkit
-would pull in cgo and X11/OpenGL at runtime and cost the single static binary.
-The terminal code covers headless machines, where nothing can open anyway.
+The badge is a browser window rather than a native one on purpose: a GUI
+toolkit would pull in cgo and X11/OpenGL at runtime and cost the single static
+binary. The terminal code covers headless machines, where nothing can open
+anyway.
 */
-func announce(store *config.Store, srv *server.Server, noQR, noWindow bool) {
+func announce(srv *server.Server, noQR, noWindow bool) (closeWindow func()) {
+	noop := func() {}
+
 	url, err := srv.JoinURL()
 	if err != nil {
 		log.Printf("[qr] could not determine LAN address: %v", err)
-		return
+		return noop
 	}
 
 	if !noQR {
@@ -158,11 +166,14 @@ func announce(store *config.Store, srv *server.Server, noQR, noWindow bool) {
 	}
 
 	if noWindow || !hasDisplay() {
-		return
+		return noop
 	}
-	if err := qr.OpenBrowser(url + "/qr"); err != nil {
+	stop, err := qr.OpenWindow(url + "/qr")
+	if err != nil {
 		log.Printf("[qr] could not open a window (%v); browse to %s/qr", err, url)
+		return noop
 	}
+	return stop
 }
 
 // hasDisplay reports whether there is a desktop session to open a window in.
@@ -196,6 +207,37 @@ func ensureConfig(dir string) error {
 		log.Printf("[config] wrote default %s", dst)
 	}
 	return nil
+}
+
+/*
+tsPushURLs lists the addresses OBS can push the preview to.
+
+A loopback bind only accepts a push from this machine, and there is exactly one
+URL to print. Bound wider it accepts one from anywhere on the LAN, and the
+operator then has to know which of this machine's addresses the OBS machine can
+actually see - which is worth printing rather than making them work out.
+*/
+func tsPushURLs(v config.VideoSettings) []string {
+	if v.Mode != "mpegts" {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(v.TSListen)
+	if err != nil {
+		return nil
+	}
+
+	hosts := []string{host}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		hosts = localIPs()
+	}
+
+	out := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		// pkt_size matches what the README tells OBS to use: one TS packet
+		// short of a 1500-byte MTU, so nothing fragments on the way in.
+		out = append(out, fmt.Sprintf("udp://%s:%s?pkt_size=1316", h, port))
+	}
+	return out
 }
 
 // localIPs lists the LAN addresses a phone could reach, so the operator does

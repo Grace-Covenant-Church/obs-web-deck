@@ -6,8 +6,15 @@ import { sendAction, saveDeck } from './net.js';
 import { openEditor, loadCatalog } from './editor.js';
 import { toast } from './ui.js';
 import { renderPtzPage, releasePtz } from './joystick.js';
+import { init as initDrag } from './drag.js';
 
 const $ = (id) => document.getElementById(id);
+
+/* What the operator reads instead of the name in deck.json. The names in the
+   file are also the wire format - page ids, saved buttons, other clients - so
+   the wording is swapped on the way to the screen and nowhere else. */
+const DISPLAY_NAMES = { PTZ: 'Camera', Scenes: 'Controls' };
+const displayName = (name) => DISPLAY_NAMES[name] ?? name;
 
 /* Tiles currently rendered, explicit and generated alike. Feedback iterates
    this rather than page.buttons, which holds only the explicit ones. */
@@ -20,12 +27,19 @@ const el = {
   ptz: $('ptz'),
   gridWrap: $('grid-wrap'),
   btnEdit: $('btn-edit'),
+  btnAuto: $('btn-auto'),
   cols: $('cols'),
 };
 
 export function init() {
   el.btnEdit.innerHTML = iconMarkup('edit');
   el.btnEdit.onclick = toggleEditing;
+
+  el.btnAuto.innerHTML = iconMarkup('camcorder');
+  el.btnAuto.onclick = toggleAutoScenes;
+
+  // Delegated, so it survives the grid being rebuilt on every render.
+  initDrag(el.grid);
 
   on('config', renderAll);
   on('obsstate', (s) => {
@@ -37,7 +51,16 @@ export function init() {
     }
     renderFeedback(s);
   });
-  on('page', () => { renderPages(); renderBody(); renderFeedback(app.obs); });
+  // The bar's edit-mode controls are per-page - the column picker does not
+  // apply to the PTZ layout, and the scene-tiles switch belongs to whichever
+  // page is showing - so a page change has to repaint them too.
+  on('page', () => {
+    renderPages();
+    renderBody();
+    renderFeedback(app.obs);
+    renderColsPicker();
+    renderAutoToggle();
+  });
 }
 
 function toggleEditing() {
@@ -47,6 +70,7 @@ function toggleEditing() {
   renderBody();
   renderFeedback(app.obs);
   renderColsPicker();
+  renderAutoToggle();
   if (app.editing) loadCatalog();
 }
 
@@ -55,6 +79,45 @@ export function renderAll() {
   renderBody();
   renderFeedback(app.obs);
   renderColsPicker();
+  renderAutoToggle();
+}
+
+/* Scene tiles on or off for this page.
+ *
+ * Offered only while editing, like the column picker: on a page that is mostly
+ * generated tiles this switch empties the deck, which is not something to leave
+ * a thumb's width from the page tabs during a service.
+ */
+function renderAutoToggle() {
+  const page = currentPage();
+  const onGridPage = page && page.layout !== 'ptz';
+  el.btnAuto.hidden = !(app.editing && onGridPage);
+  if (el.btnAuto.hidden) return;
+
+  const showing = !!page.autoScenes;
+  el.btnAuto.classList.toggle('on', showing);
+  el.btnAuto.classList.toggle('off', !showing);
+  el.btnAuto.setAttribute('aria-pressed', String(showing));
+  el.btnAuto.title = showing
+    ? 'Hide the tiles OBS fills in'
+    : 'Show a tile for every OBS scene';
+}
+
+async function toggleAutoScenes() {
+  const deck = structuredClone(app.cfg.deck);
+  const page = deck.pages.find((p) => p.id === app.pageId);
+  if (!page) return;
+  page.autoScenes = !page.autoScenes;
+
+  try {
+    await saveDeck(deck);
+    // Worth saying, because a row of tiles vanishing looks like data loss:
+    // generated tiles come from OBS's live scene list and are never written to
+    // deck.json, so there is nothing here to lose and the switch flips back.
+    if (!page.autoScenes) toast('Scene tiles hidden — the switch brings them back');
+  } catch (err) {
+    toast(`Could not change scene tiles: ${err.message}`);
+  }
 }
 
 /* Column width picker, offered only while editing. Rows are left alone: the
@@ -111,7 +174,7 @@ function renderPages() {
   for (const page of app.cfg?.deck.pages ?? []) {
     const tab = document.createElement('button');
     tab.className = 'page-tab';
-    tab.textContent = page.name || page.id;
+    tab.textContent = displayName(page.name || page.id);
     tab.setAttribute('aria-selected', String(page.id === app.pageId));
     tab.onclick = () => {
       // Leaving the PTZ page must never strand a camera mid-slew.
@@ -137,9 +200,9 @@ function renderGrid(page) {
   const { cols, rows } = app.cfg.deck.grid;
 
   // The stylesheet derives a square cell size from these against the
-  // available box, so the deck fits whatever shape the screen is.
+  // available box, so the deck fits whatever shape the screen is. --rows is
+  // set below, once the rows actually being drawn are known.
   el.grid.style.setProperty('--cols', cols);
-  el.grid.style.setProperty('--rows', rows);
   el.grid.innerHTML = '';
 
   const byCell = new Map();
@@ -149,7 +212,21 @@ function renderGrid(page) {
 
   rendered = [...byCell.values()];
 
+  // A row nobody has put a button in is dead space during a show, so it is
+  // dropped and the rest of the deck grows into it. Editing keeps every row:
+  // an empty slot is the only place a new button can be aimed at.
+  const shown = [];
   for (let r = 0; r < rows; r++) {
+    const used = [...Array(cols).keys()].some((c) => byCell.has(`${r},${c}`));
+    if (app.editing || used) shown.push(r);
+  }
+
+  // The cell size divides by this, so it has to count the rows that survived,
+  // not the ones the grid is configured for. Never zero: an empty deck still
+  // has to divide by something.
+  el.grid.style.setProperty('--rows', Math.max(shown.length, 1));
+
+  for (const r of shown) {
     const row = document.createElement('div');
     row.className = 'deck-row';
     for (let c = 0; c < cols; c++) {
@@ -203,7 +280,7 @@ function tile(btn) {
 
   const label = document.createElement('span');
   label.className = 'tile-label';
-  label.textContent = btn.label ?? '';
+  label.textContent = displayName(btn.label ?? '');
   node.appendChild(label);
 
   if (btn.generated) node.dataset.generated = 'true';
@@ -237,13 +314,31 @@ function emptyCell(row, col) {
 function press(btn) {
   const action = btn.action;
   if (!action?.type) return;
+  // Checked here rather than trusted from the tile's dimming: the scene can
+  // change between a render and a thumb landing.
+  if (!enabledIn(btn, app.obs)) {
+    toast(`${btn.label || 'This button'} is off in ${sceneName(app.obs)}`);
+    return;
+  }
   if (action.type === 'page') {
     releasePtz();
     setPage(action.page);
     return;
   }
   navigator.vibrate?.(8);
-  sendAction(action);
+  sendAction(action, { page: app.pageId, row: btn.row, col: btn.col });
+
+  // A page switch is ours, not OBS's, so the server runs the rest of the chain
+  // and we take this step here. It is applied at once rather than in sequence:
+  // moving the deck changes nothing on air, so where in the order it happens
+  // cannot be seen.
+  const jump = action.type === 'chain'
+    ? action.steps?.find((step) => step.type === 'page')
+    : null;
+  if (jump) {
+    releasePtz();
+    setPage(jump.page);
+  }
 }
 
 /** Applies live OBS state to tiles without rebuilding the DOM. */
@@ -260,7 +355,32 @@ function renderFeedback(s = {}) {
     else node.dataset.active = String(active);
 
     node.dataset.unavailable = String(isUnavailable(btn, s));
+    node.dataset.disabled = String(!enabledIn(btn, s));
   }
+}
+
+/* Whether the scene on air leaves this button usable. Mirrors Button.EnabledIn
+ * on the server, which re-checks it when the press arrives.
+ *
+ * The rule lists the scenes the button works in, or - inverted - the ones it
+ * does not. An empty list is no rule at all, which is what every button without
+ * one has.
+ *
+ * The one thing the server has no equivalent of is the link being down. With no
+ * OBS connection the program scene is unknown, and a gated button reads as
+ * disabled rather than as available: not knowing whether a control is safe to
+ * press is no reason to offer it. */
+function enabledIn(btn, s = {}) {
+  const scenes = btn.enable?.scenes;
+  if (!scenes?.length) return true;
+  if (!s.connected) return false;
+  const listed = scenes.includes(s.programScene);
+  return btn.enable.invert ? !listed : listed;
+}
+
+/** For the toast: what to call the scene that switched a button off. */
+function sceneName(s = {}) {
+  return s.connected ? (s.programScene || 'this scene') : 'this scene';
 }
 
 function evalFeedback(fb, s) {

@@ -76,6 +76,7 @@ const WANTED = {
   minus:       'minus',
   edit:        'pencil',
   expand:      'maximize',
+  shrink:      'minimize',
   grid:        'grid-3x3',
   arrowLeft:   'arrow-left',
   keyboard:    'keyboard',

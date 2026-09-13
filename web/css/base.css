@@ -11,6 +11,19 @@
   --ok: #22c55e;
   --gap: 8px;
   --radius: 12px;
+
+  /* Floor for the fullscreen safe area; see `body.fullscreen .app`. Zero by
+     default, because a desktop or a projector has no cutout to dodge. */
+  --fs-inset-block: 0px;
+  --fs-inset-inline: 0px;
+}
+
+/* Touch devices are the ones with notches and gesture bars. */
+@media (pointer: coarse) {
+  :root {
+    --fs-inset-block: 28px;
+    --fs-inset-inline: 12px;
+  }
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -31,6 +44,33 @@ html, body {
 /* This is a control surface, not a document: text selection and double-tap
    zoom only get in the way of fast, repeated button presses. */
 body { user-select: none; touch-action: manipulation; }
+
+/* Fullscreen takes the whole page, not the preview alone, so the deck comes
+   with it and the operator gets the screen to themselves. The root element is
+   what gets requested; give it an explicit ground, because the UA paints
+   fullscreen backdrops black and a transparent html would show through. */
+html:fullscreen,
+html:-webkit-full-screen {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+}
+
+/* Fullscreen does NOT reliably keep content clear of a display cutout. Android
+   Chrome draws edge to edge and reports every env(safe-area-inset-*) as 0, even
+   where a notch or punch-hole physically covers those pixels, so the HUD pills
+   and the bottom row of tiles end up underneath one.
+ *
+ * So the insets are floored rather than trusted: whichever is larger wins, and
+ * a device that does report real values still gets them instead of the floor.
+ * Landscape puts the cutout on a side edge, which is why the inline axis is
+ * floored too. */
+body.fullscreen .app {
+  padding-top: max(env(safe-area-inset-top), var(--fs-inset-block));
+  padding-bottom: max(env(safe-area-inset-bottom), var(--fs-inset-block));
+  padding-left: max(env(safe-area-inset-left), var(--fs-inset-inline));
+  padding-right: max(env(safe-area-inset-right), var(--fs-inset-inline));
+}
 
 .app {
   display: flex;
@@ -69,3 +109,33 @@ body { user-select: none; touch-action: manipulation; }
   z-index: 70;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* Confirm dialog. Centred rather than a bottom sheet: this one is asking a
+   question, and the editor's sheet already owns the bottom edge. Buttons reuse
+   .btn from editor.css, which is loaded on every page. */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  z-index: 80;
+}
+
+.modal {
+  position: fixed;
+  z-index: 81;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(340px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--tile-edge);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.modal-title { font: 700 15px/1.25 ui-sans-serif, system-ui, sans-serif; }
+.modal-text { font-size: 13px; line-height: 1.4; color: var(--muted); }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }

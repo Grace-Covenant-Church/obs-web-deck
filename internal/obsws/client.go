@@ -30,6 +30,12 @@ type Client struct {
 	state   State
 	itemIDs map[string]int // "scene\x00source" -> sceneItemId
 
+	// fadeHeld is true while a partial crossfade sits on air. It is not part of
+	// State: obs-websocket neither reports the T-bar nor announces it moving, so
+	// this is a local memory of a request we sent rather than anything observed,
+	// and nothing on a phone can act on it. See resetFade.
+	fadeHeld bool
+
 	stop chan struct{}
 	once sync.Once
 }

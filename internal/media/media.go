@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/interceptor"
@@ -43,6 +44,11 @@ type room struct {
 	videoSSRC webrtc.SSRC
 
 	viewers int
+
+	// dropped counts access units discarded by the realtime guard. It is read
+	// by /api/health while ingest is writing, so it is atomic rather than
+	// under mu.
+	dropped atomic.Int64
 }
 
 func NewServer() (*Server, error) {
@@ -93,6 +99,19 @@ func (s *Server) Publishing(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.video != nil
+}
+
+// Dropped reports how many access units the realtime guard has discarded on
+// the given path, which is the number to watch when the preview stutters:
+// climbing steadily means the machine cannot keep up with the encoder.
+func (s *Server) Dropped(name string) int64 {
+	s.mu.RLock()
+	r, ok := s.rooms[name]
+	s.mu.RUnlock()
+	if !ok {
+		return 0
+	}
+	return r.dropped.Load()
 }
 
 // Handler routes "/{path}/whip" and "/{path}/whep", matching the layout

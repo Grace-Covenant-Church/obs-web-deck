@@ -57,8 +57,12 @@ export function send(obj) {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
 
-export function sendAction(action) {
-  send({ type: 'action', id: ++msgId, action });
+/* Sends a button press. `from` names the tile it came from - page id, row,
+ * column - so the server can re-check the button's own scene gate against live
+ * state instead of taking a phone's word for it. Presses with no tile behind
+ * them (the PTZ strip) simply omit it. */
+export function sendAction(action, from) {
+  send({ type: 'action', id: ++msgId, action, from });
 }
 
 /** Fetches the live OBS inventory the editor offers as choices. */

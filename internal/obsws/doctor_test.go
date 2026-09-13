@@ -35,6 +35,15 @@ func TestDoctorRecordingOutput(t *testing.T) {
 		t.Logf("active profile: %q  (all: %v)", pl.CurrentProfileName, pl.Profiles)
 	}
 
+	// The canvas is what an output's rescale is applied to, so a rescale that
+	// does not share its aspect ratio stretches the picture rather than
+	// letterboxing it.
+	if vs, err := client.Config.GetVideoSettings(); err == nil {
+		t.Logf("canvas %vx%v, output %vx%v, fps %v/%v",
+			vs.BaseWidth, vs.BaseHeight, vs.OutputWidth, vs.OutputHeight,
+			vs.FpsNumerator, vs.FpsDenominator)
+	}
+
 	// These are the Advanced > Recording > Custom Output (FFmpeg) fields.
 	for _, key := range []string{
 		"RecType", "FFOutputToFile", "FFURL", "FFFilePath", "FFFormat",
@@ -61,6 +70,19 @@ func TestDoctorRecordingOutput(t *testing.T) {
 	}
 	for _, o := range ol.Outputs {
 		t.Logf("output %-26s active=%-5v kind=%s", o.Name, o.Active, o.Kind)
+
+		// Frames OBS itself never handed to the muxer. If these are climbing,
+		// the encoder or the machine is the bottleneck and no amount of
+		// tuning downstream of OBS will help.
+		if o.Active {
+			if st, err := client.Outputs.GetOutputStatus(
+				outputs.NewGetOutputStatusParams().WithOutputName(o.Name)); err == nil {
+				t.Logf("    %-22s %.0f of %.0f skipped, congestion %.2f",
+					"frames", st.OutputSkippedFrames, st.OutputTotalFrames,
+					st.OutputCongestion)
+			}
+		}
+
 		st, err := client.Outputs.GetOutputSettings(
 			outputs.NewGetOutputSettingsParams().WithOutputName(o.Name))
 		if err != nil {

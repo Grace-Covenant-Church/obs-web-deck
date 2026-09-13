@@ -36,16 +36,21 @@
   height: var(--stick);
   margin: auto;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 45%, #1c222b 0%, #12161c 70%, #0d1116 100%);
+  /* Flat fill: the pad is the largest painted surface on the page, and a
+     radial gradient over it is the most expensive thing a weak GPU is asked
+     to rasterise. */
+  background: #12161c;
   border: 1px solid var(--tile-edge);
   /* Without this the browser claims the drag for scrolling and the
      pointermove stream dies partway through a pan. */
   touch-action: none;
   overflow: hidden;
 }
+/* A hard ring rather than a glow; a 30px blur radius over a circle this big
+   costs more than the state it signals is worth. */
 .stick.active {
   border-color: #0f766e;
-  box-shadow: 0 0 0 1px #0f766e, 0 0 30px -8px #0f766e;
+  box-shadow: 0 0 0 2px #0f766e;
 }
 
 .stick-ring {
@@ -55,13 +60,20 @@
   border-radius: 50%;
 }
 
+/* Two hairlines. They were a pair of stacked gradients, which is a lot of
+   arithmetic for what a solid 1px fill draws directly. */
 .stick-cross {
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(to right, transparent calc(50% - .5px), #232a34 calc(50% - .5px), #232a34 calc(50% + .5px), transparent calc(50% + .5px)),
-    linear-gradient(to bottom, transparent calc(50% - .5px), #232a34 calc(50% - .5px), #232a34 calc(50% + .5px), transparent calc(50% + .5px));
 }
+.stick-cross::before,
+.stick-cross::after {
+  content: "";
+  position: absolute;
+  background: #232a34;
+}
+.stick-cross::before { left: 0; right: 0; top: 50%; height: 1px; }
+.stick-cross::after { top: 0; bottom: 0; left: 50%; width: 1px; }
 
 .stick-knob {
   position: absolute;
@@ -71,8 +83,10 @@
   aspect-ratio: 1;
   margin: -15% 0 0 -15%;
   border-radius: 50%;
-  background: linear-gradient(180deg, #14b8a6, #0f766e);
-  box-shadow: 0 6px 18px -4px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.28);
+  /* Flat, and no shadow to redraw: this is the one element that moves with
+     the finger, so whatever it costs is paid on every frame of a pan. */
+  background: #12a594;
+  border: 1px solid #0b6157;
   /* Animated only on release, so the spring-back reads as deliberate while a
      live drag stays perfectly locked to the finger. */
   transition: transform .16s cubic-bezier(.2, .8, .3, 1);
@@ -173,7 +187,7 @@
   right: 14px;
   height: 4px;
   border-radius: 2px;
-  background: linear-gradient(90deg, #1b2029, #2b3340 50%, #1b2029);
+  background: #232a34;
 }
 
 /* The centre detent marks the dead position the knob springs back to. */
@@ -200,8 +214,9 @@
   width: 58px;
   height: 44px;
   border-radius: 11px;
-  background: linear-gradient(180deg, #a78bfa, #7c3aed);
-  box-shadow: 0 6px 16px -5px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.3);
+  /* Flat and shadowless for the same reason as the stick knob: it is dragged. */
+  background: #8b5cf6;
+  border: 1px solid #6d28d9;
   pointer-events: none;
   /* Animated only on release, so the snap back to centre reads as a spring
      while a live drag stays locked to the finger. */

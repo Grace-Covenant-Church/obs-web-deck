@@ -53,6 +53,12 @@ export async function start() {
     el.stage.classList.add('has-video');
   };
 
+  // Fit the stage to the frames OBS is actually sending, rather than assuming
+  // a shape. `resize` covers a mid-session change of output resolution, which
+  // fires no other event.
+  el.video.addEventListener('loadedmetadata', fitStage);
+  el.video.addEventListener('resize', fitStage);
+
   conn.onconnectionstatechange = () => {
     if (!['failed', 'disconnected', 'closed'].includes(conn.connectionState)) return;
     el.stage.classList.remove('has-video');
@@ -87,6 +93,14 @@ export async function start() {
     conn.close();
     if (pc === conn) retry(3000);
   }
+}
+
+/* Letterboxing is not free on a phone: the stage is a fixed slice of a small
+ * screen, so black bars come straight out of the preview's usable size. */
+function fitStage() {
+  const { videoWidth: w, videoHeight: h } = el.video;
+  if (!w || !h) return;
+  el.stage.style.setProperty('--stage-ratio', `${w} / ${h}`);
 }
 
 function retry(ms) {

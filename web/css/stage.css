@@ -3,9 +3,12 @@
 .stage {
   position: relative;
   flex: 0 0 auto;
-  aspect-ratio: 16 / 9;
-  /* On a short or landscape screen the 16:9 box would eat the whole viewport;
-     the video letterboxes inside instead of squeezing the controls out. */
+  /* The preview is 16:9 out of the box (640x360), but the OBS operator can
+     rescale it to anything, so player.js replaces this with the shape of the
+     frames that actually arrive. The default only has to hold until then. */
+  aspect-ratio: var(--stage-ratio, 16 / 9);
+  /* On a short or landscape screen the box would eat the whole viewport; the
+     video letterboxes inside instead of squeezing the controls out. */
   max-height: 40dvh;
   min-height: 0;
   background: #000;
@@ -44,7 +47,9 @@
   align-items: center;
   gap: 8px;
   padding: 8px;
-  background: linear-gradient(180deg, rgba(0,0,0,.65), transparent);
+  /* Flat wash rather than a gradient: it sits over live video, so it is the
+     one overlay a weak tablet GPU has to composite on every frame. */
+  background: rgba(0,0,0,.5);
   pointer-events: none;
 }
 .hud-left, .hud-right { display: flex; align-items: center; gap: 6px; }
@@ -57,21 +62,20 @@
   border-radius: 5px;
   background: rgba(255,255,255,.07);
   color: var(--muted);
-  transition: background .15s, color .15s;
 }
 .pill[data-state="on"] { background: var(--ok); color: #06210f; }
 
 /* Streaming and recording are the two states worth catching from across a
-   room, so they pulse rather than sitting static. */
+   room, so they go solid red against every other pill's grey. They used to
+   pulse as well, but an animation that never stops keeps a low-power tablet
+   repainting over video for as long as the deck is open, and the word plus
+   the colour carry the state on their own. */
 #pill-stream[data-state="on"],
 #pill-record[data-state="on"] {
   background: var(--live);
   color: #fff;
-  animation: pulse 2s ease-in-out infinite;
 }
-.pill[data-state="warn"] { background: #a16207; color: #fff; animation: none; }
-
-@keyframes pulse { 50% { opacity: .55; } }
+.pill[data-state="warn"] { background: #a16207; color: #fff; }
 
 .stat {
   font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -96,6 +100,9 @@
   place-items: center;
 }
 .hud-btn:active { background: rgba(255,255,255,.18); }
+/* Lit while fullscreen, so the button reads as a toggle rather than as two
+   unrelated icons. */
+.hud-btn.on { background: rgba(255,255,255,.22); }
 
 .scene-tag {
   position: absolute;
@@ -116,9 +123,9 @@
 
 /* Landscape puts the preview and the deck side by side.
  *
- * Portrait is width-bound: the stage spans the screen and its 16:9 ratio sets
- * the height. Landscape is the other way round - the stage stretches to the
- * full column height and the ratio sets the width - so the height cap that
+ * Portrait is width-bound: the stage spans the screen and its aspect ratio
+ * sets the height. Landscape is the other way round - the stage stretches to
+ * the full column height and the ratio sets the width - so the height cap that
  * protects portrait has to come off here. The deck needs no special casing:
  * its cell size is derived from whatever box is left over. */
 @media (orientation: landscape) {
@@ -128,8 +135,10 @@
     flex: 0 1 auto;
     align-self: stretch;
     max-height: none;
-    /* Never let the preview take so much width that the deck is unusable. */
-    max-width: 60%;
+    /* The deck gets half the screen: a phone held sideways has room for a
+       readable preview and full-size buttons, and the buttons are the half
+       being aimed at. */
+    max-width: 50%;
     margin: var(--gap) 0 var(--gap) var(--gap);
   }
 

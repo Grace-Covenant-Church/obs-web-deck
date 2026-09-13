@@ -4,15 +4,17 @@ go 1.26.5
 
 require (
 	github.com/andreykaipov/goobs v1.9.0
+	github.com/asticode/go-astits v1.16.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/jezek/xgb v1.3.1
 	github.com/pion/interceptor v0.1.47
 	github.com/pion/rtcp v1.2.17
 	github.com/pion/webrtc/v4 v4.2.18
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 )
 
 require (
 	github.com/asticode/go-astikit v0.30.0 // indirect
-	github.com/asticode/go-astits v1.16.0 // indirect
 	github.com/buger/jsonparser v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/logutils v1.0.0 // indirect
@@ -32,7 +34,6 @@ require (
 	github.com/pion/stun/v3 v3.1.6 // indirect
 	github.com/pion/transport/v4 v4.0.2 // indirect
 	github.com/pion/turn/v5 v5.0.12 // indirect
-	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/net v0.50.0 // indirect

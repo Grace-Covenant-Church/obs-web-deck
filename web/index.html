@@ -43,6 +43,8 @@
         <div class="pages" id="pages"></div>
         <!-- Column width picker, shown only in edit mode. -->
         <div class="cols" id="cols" hidden role="group" aria-label="Grid columns"></div>
+        <!-- Scene tiles on or off for this page. Edit mode only. -->
+        <button class="edit-btn" id="btn-auto" hidden aria-pressed="false"></button>
         <button class="edit-btn" id="btn-edit" title="Edit buttons"></button>
       </nav>
 
@@ -100,6 +102,23 @@
         <div class="swatches" id="f-colors"></div>
       </div>
 
+      <!-- Chain steps. One step is an ordinary button; add a second and the
+           tile runs them in order. The fields below always edit the selected
+           step. -->
+      <div class="field" id="w-steps">
+        <span>Steps</span>
+        <div class="steps" id="f-steps"></div>
+      </div>
+
+      <label class="field" id="w-delay" hidden>
+        <span>Wait before this step</span>
+        <input type="number" id="f-delay" min="0" max="2000" step="50" value="0">
+        <small class="hint">Milliseconds. Every request already waits for OBS to
+          answer, so most chains need none of this. It is for letting a
+          transition play out first: OBS reports one as done the moment it
+          starts, not when it finishes.</small>
+      </label>
+
       <label class="field" id="w-action">
         <span>Action</span>
         <select id="f-action">
@@ -115,7 +134,7 @@
           <option value="recordPause">Pause / resume recording</option>
           <option value="replay">Save replay buffer</option>
           <option value="hotkey">OBS hotkey (any keybind)</option>
-          <option value="ptzPreset">PTZ preset recall</option>
+          <option value="ptzPreset">Camera preset recall</option>
           <option value="page">Switch deck page</option>
         </select>
       </label>
@@ -147,17 +166,17 @@
         <span>Camera preset slot</span>
         <input type="number" id="f-preset" min="1" max="64" value="1">
         <small class="hint">obs-ptz exposes no preset list, so the slot number
-          is yours to assign. Long-press a preset on the PTZ page to store the
-          camera's current position into it.</small>
+          is yours to assign. Long-press a preset on the Camera page to store
+          the camera's current position into it; it asks before overwriting.</small>
       </label>
 
       <label class="field" id="w-percent" hidden>
         <span>Crossfade amount (%)</span>
         <input type="number" id="f-percent" min="0" max="100" step="5" value="50">
         <small class="hint">Holds the studio-mode T-bar this far from program
-          toward preview, mixing the two on air. 100 completes the swap like a
-          full transition; 0 returns to program only. Needs a transition that
-          can be held part way, such as Fade.</small>
+          toward preview, mixing the two on air. The mix stays up until another
+          crossfade, a transition or a scene button ends it: 0 returns to
+          program only, 100 completes the swap like a full transition.</small>
       </label>
 
       <label class="field" id="w-page" hidden>
@@ -169,6 +188,20 @@
         <input type="checkbox" id="f-feedback" checked>
         <span>Light the button up when this is active</span>
       </label>
+
+      <!-- Scene gate. Always offered: any button can be wrong for the scene
+           that happens to be on air. -->
+      <div class="field" id="w-enable">
+        <span>Available in</span>
+        <select id="f-enable-mode">
+          <option value="">Every scene</option>
+          <option value="only">Only the scenes below</option>
+          <option value="except">Every scene except those below</option>
+        </select>
+        <div class="scene-chips" id="f-enable-scenes" hidden></div>
+        <small class="hint" id="f-enable-hint" hidden>Outside these scenes the
+          button dims and does nothing. Editing still reaches it.</small>
+      </div>
     </div>
 
     <footer class="sheet-foot">
@@ -177,6 +210,19 @@
       <button class="btn primary" id="btn-save">Save</button>
     </footer>
   </aside>
+
+  <!-- Confirm. For the handful of presses that overwrite something the deck
+       cannot get back; the toast is only ever after the fact. -->
+  <div class="modal-scrim" id="confirm-scrim" hidden></div>
+  <div class="modal" id="confirm" role="dialog" aria-modal="true"
+       aria-labelledby="confirm-title" hidden>
+    <strong class="modal-title" id="confirm-title"></strong>
+    <p class="modal-text" id="confirm-text"></p>
+    <div class="modal-foot">
+      <button class="btn" id="confirm-no">Cancel</button>
+      <button class="btn primary" id="confirm-yes">OK</button>
+    </div>
+  </div>
 
   <div class="toast" id="toast"></div>
 

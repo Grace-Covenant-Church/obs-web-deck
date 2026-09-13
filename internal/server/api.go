@@ -85,6 +85,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"recording":  st.Recording,
 		"videoMode":  set.Video.Mode,
 		"publishing": s.media.Publishing(set.Video.StreamPath),
+		// Climbing steadily means the realtime guard is fighting to keep up,
+		// which points at the encoder or the machine rather than the network.
+		"droppedFrames": s.media.Dropped(set.Video.StreamPath),
 	})
 }
 

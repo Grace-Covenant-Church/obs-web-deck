@@ -51,10 +51,47 @@ const (
 	defaultAudioDur = 20 * time.Millisecond
 )
 
+/*
+Realtime guard.
+
+MPEG-TS over UDP has no back channel, so nothing upstream slows down when this
+process does. A stall - a CPU-starved machine, a scheduler hiccup, a burst of
+datagrams behind a keyframe - leaves a backlog queued in the reader, and
+draining it normally replays every buffered frame in order. The preview then
+stays exactly as late as the worst stall was, for the rest of the session.
+
+That is the wrong trade for a control surface: an operator would rather lose a
+second of video than watch a second-old program feed while pressing buttons.
+So the ingest measures how far the media timeline has slipped behind the wall
+clock and, past maxLag, discards frames until it has caught up.
+
+H264 is only decodable from an IDR onwards, so a partial GOP cannot be
+dropped; the unit of catch-up is everything up to the next keyframe. Opus
+access units are independent, so audio is dropped one unit at a time.
+*/
+const (
+	// DefaultMaxLag is the slip past which frames start being dropped. It sits
+	// above a phone's jitter buffer (50-150 ms) so ordinary network variation
+	// never trips it, and well below the point where a preview stops being
+	// usable for cueing.
+	DefaultMaxLag = 400 * time.Millisecond
+
+	// baseWindow bounds how far back the on-time baseline looks. Without a
+	// window, a source clock running slightly slow against ours would look
+	// like ever-growing lag and eventually drop every GOP forever. With one,
+	// a slip that cannot be drained is accepted as the new normal after
+	// 10-20 seconds instead.
+	baseWindow = 10 * time.Second
+)
+
 // StartMPEGTS listens for an MPEG-TS stream pushed over UDP and republishes it
 // on the given path. It returns once the socket is open; ingest runs until ctx
 // is cancelled.
-func (s *Server) StartMPEGTS(ctx context.Context, addr, path string) error {
+//
+// maxLag is how far the preview may fall behind wall clock before frames are
+// dropped to catch up; zero disables the guard and forwards everything that
+// arrives, however late.
+func (s *Server) StartMPEGTS(ctx context.Context, addr, path string, maxLag time.Duration) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return fmt.Errorf("resolve %s: %w", addr, err)
@@ -68,22 +105,27 @@ func (s *Server) StartMPEGTS(ctx context.Context, addr, path string) error {
 	// is small enough that a 1080p IDR can overrun it and shred the frame.
 	_ = conn.SetReadBuffer(4 << 20)
 
-	log.Printf("[media] MPEG-TS listening on udp://%s -> /%s", addr, path)
+	if maxLag > 0 {
+		log.Printf("[media] MPEG-TS listening on udp://%s -> /%s (drop frames past %v behind)",
+			addr, path, maxLag)
+	} else {
+		log.Printf("[media] MPEG-TS listening on udp://%s -> /%s (realtime guard off)", addr, path)
+	}
 
 	go func() {
 		<-ctx.Done()
 		_ = conn.Close()
 	}()
 
-	go s.ingestLoop(ctx, conn, path)
+	go s.ingestLoop(ctx, conn, path, maxLag)
 	return nil
 }
 
 // ingestLoop keeps demuxing, restarting after an error so that stopping and
 // restarting the OBS recording reconnects rather than needing a bounce.
-func (s *Server) ingestLoop(ctx context.Context, conn *net.UDPConn, path string) {
+func (s *Server) ingestLoop(ctx context.Context, conn *net.UDPConn, path string, maxLag time.Duration) {
 	for ctx.Err() == nil {
-		if err := s.ingest(ctx, conn, path); err != nil && ctx.Err() == nil {
+		if err := s.ingest(ctx, conn, path, maxLag); err != nil && ctx.Err() == nil {
 			log.Printf("[media] MPEG-TS ingest ended: %v", err)
 		}
 		s.clearRoom(path)
@@ -107,7 +149,7 @@ func (s *Server) clearRoom(path string) {
 	}
 }
 
-func (s *Server) ingest(ctx context.Context, conn *net.UDPConn, path string) error {
+func (s *Server) ingest(ctx context.Context, conn *net.UDPConn, path string, maxLag time.Duration) error {
 	reader := newDatagramReader(ctx, conn)
 	defer reader.Close()
 	// Each attempt starts a new demuxer, so alignment is found again.
@@ -122,6 +164,12 @@ func (s *Server) ingest(ctx context.Context, conn *net.UDPConn, path string) err
 		lastAudioPTS       int64 = -1
 		warnedCodec              = map[astits.StreamType]bool{}
 		loggedPMT          bool
+
+		// One tracker per elementary stream: the two PIDs share a clock but
+		// not an arrival pattern, and only video has to wait for a keyframe
+		// before it can resume.
+		videoLag, audioLag lagTracker
+		gate               = videoGate{max: maxLag}
 	)
 
 	for {
@@ -190,6 +238,21 @@ func (s *Server) ingest(ctx context.Context, conn *net.UDPConn, path string) err
 				rm.mu.Unlock()
 				log.Printf("[media] %s publishing video (MPEG-TS H264)", path)
 			}
+
+			lag := videoLag.observe(pts, time.Now())
+			catching := gate.active
+			if gate.drop(lag, d.PES.Data) {
+				if !catching {
+					log.Printf("[media] %s is %v behind, dropping to the next keyframe",
+						path, lag.Round(time.Millisecond))
+				}
+				rm.dropped.Add(1)
+				continue
+			}
+			if catching {
+				log.Printf("[media] %s caught up, %d frames dropped", path, gate.dropped)
+			}
+
 			dur := frameDuration(pts, &lastVideoPTS, defaultVideoDur)
 			// The PES payload is Annex-B, which is what Pion's H264 payloader
 			// expects, so the bytes go straight through.
@@ -214,6 +277,13 @@ func (s *Server) ingest(ctx context.Context, conn *net.UDPConn, path string) err
 				rm.mu.Unlock()
 				log.Printf("[media] %s publishing audio (MPEG-TS Opus)", path)
 			}
+			// Opus units decode independently, so late audio needs no
+			// equivalent of a keyframe - dropping one unit is enough.
+			if lag := audioLag.observe(pts, time.Now()); maxLag > 0 && lag > maxLag {
+				rm.dropped.Add(int64(len(units)))
+				continue
+			}
+
 			dur := frameDuration(pts, &lastAudioPTS, defaultAudioDur)
 			// A PES packet can hold several access units; split the measured
 			// span across them rather than repeating it.
@@ -275,8 +345,145 @@ func ptsOf(pes *astits.PESData) int64 {
 	return pes.Header.OptionalHeader.PTS.Base
 }
 
+/*
+videoGate decides which late video frames to discard.
+
+Two rules, and the second is the one that makes it converge. A frame is
+dropped while the stream is behind, and having started, dropping continues
+until a decodable entry point arrives - so a partial GOP is never forwarded to
+a decoder that cannot use it. And the entry point itself is only taken once
+the lag is back inside budget, which means a backlog deeper than one GOP is
+discarded a GOP at a time rather than declared solved at the first keyframe.
+*/
+type videoGate struct {
+	max     time.Duration // zero disables the gate entirely
+	active  bool
+	dropped int // frames discarded during the catch-up in progress
+}
+
+// drop reports whether this access unit should be discarded. The payload is
+// scanned for a keyframe only once a catch-up is under way and the lag is back
+// inside budget, so the common path never touches the frame bytes.
+func (g *videoGate) drop(lag time.Duration, au []byte) bool {
+	if g.max <= 0 {
+		return false
+	}
+	behind := lag > g.max
+	if behind && !g.active {
+		g.active, g.dropped = true, 0
+	}
+	if !g.active {
+		return false
+	}
+	if behind || !containsIDR(au) {
+		g.dropped++
+		return true
+	}
+	g.active = false
+	return false
+}
+
+/*
+lagTracker converts PTS timestamps into how far behind wall clock a stream has
+fallen.
+
+The raw offset between the encoder's clock and ours means nothing on its own:
+it carries the encoder's own pipeline delay and an arbitrary PTS origin. What
+matters is the offset relative to the best one recently seen - the frame that
+arrived earliest for its timestamp defines "on time", and everything else is
+late by the difference.
+
+The baseline is the minimum over a sliding pair of windows rather than over all
+time, so a slip that never drains is eventually accepted as the new normal
+instead of dropping every GOP forever.
+*/
+type lagTracker struct {
+	started bool
+	start   time.Time
+	origin  int64
+
+	prev     time.Duration // minimum skew in the window before this one
+	cur      time.Duration // minimum skew in the window in progress
+	windowAt time.Time
+}
+
+// observe records a frame's timestamp and returns how far behind realtime the
+// stream now is. A frame without a PTS carries no timing information, so it is
+// reported as on time rather than guessed at.
+func (l *lagTracker) observe(pts int64, now time.Time) time.Duration {
+	if pts < 0 {
+		return 0
+	}
+	// PTS runs backwards when the encoder restarts, and once every 26.5 hours
+	// when the 33-bit counter wraps. Either way the old origin is useless.
+	if !l.started || pts < l.origin {
+		l.reset(pts, now)
+		return 0
+	}
+
+	media := time.Duration(pts-l.origin) * time.Second / ptsClock
+	skew := now.Sub(l.start) - media
+
+	if skew < l.cur {
+		l.cur = skew
+	}
+	if now.Sub(l.windowAt) >= baseWindow {
+		l.prev, l.cur, l.windowAt = l.cur, skew, now
+	}
+
+	base := l.cur
+	if l.prev < base {
+		base = l.prev
+	}
+	if lag := skew - base; lag > 0 {
+		return lag
+	}
+	return 0
+}
+
+func (l *lagTracker) reset(pts int64, now time.Time) {
+	l.started = true
+	l.start, l.windowAt = now, now
+	l.origin = pts
+	l.prev, l.cur = 0, 0
+}
+
+/*
+containsIDR reports whether an Annex-B access unit carries an IDR picture,
+which is the only point a decoder can be re-entered after dropped frames.
+
+A parameter set counts too: x264 and NVENC both emit SPS/PPS immediately
+before each IDR when muxing to MPEG-TS, and resuming at the SPS hands the
+decoder its configuration along with the keyframe.
+*/
+func containsIDR(b []byte) bool {
+	for i := 0; i+3 < len(b); i++ {
+		if b[i] != 0 || b[i+1] != 0 {
+			continue
+		}
+		// Both the three- and four-byte start codes end in a single 0x01.
+		j := i + 2
+		if b[j] == 0 {
+			j++
+		}
+		if j+1 >= len(b) || b[j] != 1 {
+			continue
+		}
+		switch b[j+1] & 0x1F {
+		case 5, 7: // IDR slice, sequence parameter set
+			return true
+		}
+	}
+	return false
+}
+
 // frameDuration turns a PTS delta into a wall-clock duration, falling back to
 // the codec's nominal rate whenever the delta is missing or implausible.
+//
+// Dropped frames never reach this, so after a catch-up the delta spans the
+// whole discarded run and lands outside maxFrameDur. Falling back to the
+// nominal rate is what collapses that gap: the media timeline resumes as if
+// the dropped frames had never existed, which is the point of dropping them.
 func frameDuration(pts int64, last *int64, fallback time.Duration) time.Duration {
 	if pts < 0 {
 		return fallback
