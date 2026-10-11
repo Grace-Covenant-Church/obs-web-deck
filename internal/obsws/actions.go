@@ -2,6 +2,7 @@ package obsws
 
 import (
 	"log"
+	"time"
 
 	"github.com/andreykaipov/goobs"
 	"github.com/andreykaipov/goobs/api/requests/general"
@@ -39,6 +40,7 @@ func (c *Client) SetProgramScene(name string) error {
 		return nil
 	}
 
+	c.awaitTransitionIdle(obs)
 	_, err := obs.Scenes.SetCurrentProgramScene(
 		scenes.NewSetCurrentProgramSceneParams().WithSceneName(name))
 	return err
@@ -84,6 +86,7 @@ func (c *Client) Transition() error {
 		return nil
 	}
 	c.resetFade(obs)
+	c.awaitTransitionIdle(obs)
 	_, err := obs.Transitions.TriggerStudioModeTransition()
 	return err
 }
@@ -114,6 +117,7 @@ func (c *Client) Crossfade(percent int) error {
 	// handed to the ordinary transition, which is what it amounts to anyway.
 	if crossfadeCompletes(percent) {
 		c.resetFade(obs)
+		c.awaitTransitionIdle(obs)
 		_, err := obs.Transitions.TriggerStudioModeTransition()
 		return err
 	}
@@ -126,6 +130,12 @@ func (c *Client) Crossfade(percent int) error {
 	// makes releasing a partial mix self-defeating: it would undo the very
 	// crossfade being asked for. Leaving it unreleased is what keeps the mix
 	// on air; a later crossfade or transition ends it.
+	// Moving a mix that is already up continues it. Anything else starts a
+	// new manual transition, which OBS drops like any other while one is
+	// still running.
+	if !c.fadeNeedsClearing() {
+		c.awaitTransitionIdle(obs)
+	}
 	if _, err := obs.Transitions.SetTBarPosition(
 		transitions.NewSetTBarPositionParams().
 			WithPosition(crossfadePosition(percent)).
@@ -167,6 +177,62 @@ func (c *Client) resetFade(obs *goobs.Client) {
 	}
 	c.setFadeHeld(false)
 }
+
+/*
+awaitTransitionIdle holds a request until OBS will act on it.
+
+In studio mode OBS drops any transition asked for while another is still
+running - no error, no event, the request is simply ignored (TransitionToScene's
+"block new transitions from starting"). Two ordinary presses land in that
+window:
+
+  - Anything after a held crossfade. resetFade releases the T-bar, but OBS
+    glides a manual transition back to zero over the next few frames rather
+    than jumping there, and the request queued right behind the release
+    arrives first. This is the Cut that did nothing after Laptop + Camera.
+
+  - A press inside a running transition: a Cut tapped twice, or a scene
+    pressed while the last one is still fading in.
+
+A dropped transition is worse than a lost press. OBS records the scene as on
+program before it decides to drop it, so it then reports a program scene that
+is not the one on air, and the next press is judged against that.
+
+The cursor is the one OBS checks: strictly between 0 and 1 is a transition in
+flight; 1 is a finished one and 0 a cancelled one. A transition that never
+settles - the T-bar being held in OBS itself - gives up after
+transitionIdleWait and sends the request anyway, which is no worse than not
+waiting.
+*/
+func (c *Client) awaitTransitionIdle(obs *goobs.Client) {
+	if !c.State().StudioMode {
+		return
+	}
+	deadline := time.Now().Add(transitionIdleWait)
+	for {
+		resp, err := obs.Transitions.GetCurrentSceneTransitionCursor()
+		if err != nil || !transitionBusy(resp.TransitionCursor) {
+			return
+		}
+		if time.Now().After(deadline) {
+			log.Printf("[obs] transition still running after %v (cursor %.2f); sending anyway",
+				transitionIdleWait, resp.TransitionCursor)
+			return
+		}
+		time.Sleep(transitionIdlePoll)
+	}
+}
+
+// transitionBusy is OBS's own test for a transition it will not interrupt.
+func transitionBusy(cursor float64) bool { return cursor > 0 && cursor < 1 }
+
+// transitionIdleWait comfortably covers the 300ms Fade and a short Stinger. The
+// press is held on the pressing phone's connection while this runs, so it is
+// bounded like a chain step's delay.
+const (
+	transitionIdleWait = 1500 * time.Millisecond
+	transitionIdlePoll = 15 * time.Millisecond
+)
 
 // fadeNeedsClearing reports whether a mix of ours is still on air. It drops a
 // flag that studio mode has already invalidated, because leaving studio mode

@@ -145,3 +145,23 @@ func TestAlreadyOnProgram(t *testing.T) {
 		t.Error("an unknown program scene must not swallow a press")
 	}
 }
+
+// Busy has to match OBS's own test exactly. Waiting on a finished (1) or
+// cancelled (0) transition would hold every press for the full timeout, and
+// not waiting on one in flight is the dropped press this exists to prevent.
+func TestTransitionBusy(t *testing.T) {
+	for _, c := range []struct {
+		cursor float64
+		want   bool
+	}{
+		{0, false},  // idle after a cancelled T-bar
+		{1, false},  // idle after a finished transition
+		{0.2, true}, // a held crossfade, or one gliding home after release
+		{0.001, true},
+		{0.999, true},
+	} {
+		if got := transitionBusy(c.cursor); got != c.want {
+			t.Errorf("transitionBusy(%v) = %v, want %v", c.cursor, got, c.want)
+		}
+	}
+}
