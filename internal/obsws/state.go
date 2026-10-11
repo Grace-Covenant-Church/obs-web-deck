@@ -106,12 +106,6 @@ func (c *Client) handle(ev any) (changed, resyncItems bool) {
 	case *events.CurrentPreviewSceneChanged:
 		c.state.PreviewScene = e.SceneName
 
-	case *events.SceneTransitionEnded:
-		// Changes nothing a phone can see; it is what a program change waits
-		// on before putting the staged scene back. See awaitTransition.
-		c.transitionDone()
-		return false, false
-
 	case *events.StudioModeStateChanged:
 		c.state.StudioMode = e.StudioModeEnabled
 

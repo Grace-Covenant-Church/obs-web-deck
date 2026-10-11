@@ -36,11 +36,6 @@ type Client struct {
 	// and nothing on a phone can act on it. See resetFade.
 	fadeHeld bool
 
-	// transitionWaiters are released when OBS reports a transition has ended.
-	// A program change in studio mode is a transition, and what it does to the
-	// preview scene is only settled once that finishes. See awaitTransition.
-	transitionWaiters []chan struct{}
-
 	stop chan struct{}
 	once sync.Once
 }

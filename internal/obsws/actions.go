@@ -2,7 +2,6 @@ package obsws
 
 import (
 	"log"
-	"time"
 
 	"github.com/andreykaipov/goobs"
 	"github.com/andreykaipov/goobs/api/requests/general"
@@ -15,26 +14,17 @@ import (
 )
 
 /*
-SetProgramScene puts a scene on air and leaves the staged one alone.
+SetProgramScene puts a scene on air.
 
-In studio mode a program change is not a jump, it is a transition, and OBS runs
-it the same way the T-bar does: the scene goes to program and the one coming off
-air lands in preview. The operator's next shot is thrown away by the cut, which
-is what this has to undo. Pressing the scene already on air is the plain case of
-it - nothing changes on air at all, and the only visible effect is preview
-jumping to the scene just pressed.
+A program change in studio mode is a transition, and OBS ends one by putting the
+scene coming off air into preview. That is the swap the Cut button relies on:
+take a scene, and the one it replaced is sitting in preview ready to go back to.
 
-Two things follow, and both are needed:
-
-  - A press on the scene already on air does not go to OBS at all. There is
-    nothing for it to do, and the transition it would run is not free: a Fade to
-    the same scene is invisible, but a Stinger plays its animation over a shot
-    that was never going to change.
-
-  - Anywhere else, preview is put back after the transition ends rather than
-    when the request returns. The request returns immediately and OBS moves
-    preview around 300ms later, at the end of the transition, so a restore sent
-    any earlier is simply overwritten.
+The exception is a press on the scene already on air, which does not reach OBS
+at all. Nothing on air can change, so the transition has nothing to do except
+its side effect - dragging preview onto the scene that is already on program.
+That leaves preview and program on the same scene and the Cut button with
+nowhere to bounce back to, which is what a double tap used to do.
 */
 func (c *Client) SetProgramScene(name string) error {
 	obs := c.client()
@@ -49,62 +39,20 @@ func (c *Client) SetProgramScene(name string) error {
 		return nil
 	}
 
-	// Read before the cut. Afterwards OBS has already overwritten it, and the
-	// value worth keeping is gone.
-	restore := c.previewToRestore()
-
-	// Registered before the request, because the transition it starts can end
-	// before the next line runs.
-	var done chan struct{}
-	if restore != "" {
-		done = c.awaitTransition()
-	}
-
-	if _, err := obs.Scenes.SetCurrentProgramScene(
-		scenes.NewSetCurrentProgramSceneParams().WithSceneName(name)); err != nil {
-		c.forgetTransition(done)
-		return err
-	}
-	if restore == "" {
-		return nil
-	}
-
-	select {
-	case <-done:
-	case <-time.After(transitionGrace):
-		// Long enough for any sane transition. Restoring on a timeout risks
-		// putting preview back while OBS is still mid-transition, which is
-		// still better than leaving the operator's shot discarded.
-		c.forgetTransition(done)
-	}
-
-	// Nothing to do when the transition left preview where it was - which is
-	// what happens when the scene coming off air is the one that was staged.
-	if c.State().PreviewScene == restore {
-		return nil
-	}
-	// The cut is what was pressed and it has already gone out, so a preview
-	// that will not go back is logged rather than raised as a failed press.
-	if err := c.setPreviewScene(obs, restore); err != nil {
-		log.Printf("[obs] restoring preview scene %q: %v", restore, err)
-	}
-	return nil
+	_, err := obs.Scenes.SetCurrentProgramScene(
+		scenes.NewSetCurrentProgramSceneParams().WithSceneName(name))
+	return err
 }
 
-// transitionGrace bounds the wait for a transition to end. The press is being
-// held on the pressing phone's connection while this runs, so it cannot be
-// open-ended; it is the same order as the longest delay a chain step may ask
-// for, and far longer than the 300ms a default Fade takes.
-const transitionGrace = 2 * time.Second
-
-// alreadyOnProgram reports whether a scene is the one on air, and so whether a
-// request to put it there has anything to do.
-//
-// This is the scene the last CurrentProgramSceneChanged named, which is a few
-// hundred milliseconds behind a change made somewhere else - OBS's own UI, a
-// hotkey - while its transition runs. Being behind cannot swallow a press: for
-// that the state would have to name the scene being asked for while OBS is on
-// a different one, which is the one thing a stale program scene is not.
+/* alreadyOnProgram reports whether a scene is the one on air, and so whether a
+ * request to put it there has anything to do.
+ *
+ * This is the scene the last CurrentProgramSceneChanged named, which is a few
+ * hundred milliseconds behind a change made somewhere else - OBS's own UI, a
+ * hotkey - while its transition runs. Being behind cannot swallow a press: for
+ * that the state would have to name the scene being asked for while OBS is on a
+ * different one, which is the one thing a stale program scene is not.
+ */
 func (c *Client) alreadyOnProgram(name string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -114,86 +62,15 @@ func (c *Client) alreadyOnProgram(name string) bool {
 	return name != "" && c.state.ProgramScene == name
 }
 
-// previewToRestore is the scene a program change has to put back in preview, or
-// "" when there is nothing to put back. Outside studio mode there is no preview
-// scene at all; a preview scene OBS has not told us about yet is not worth
-// guessing at.
-//
-// What preview holds is deliberately not compared against the scene going on
-// air. They can be the same - staging a shot and then cutting straight to it is
-// ordinary - and the transition moves preview off it just the same.
-func (c *Client) previewToRestore() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if !c.state.StudioMode {
-		return ""
-	}
-	return c.state.PreviewScene
-}
-
-/* awaitTransition returns a channel closed when OBS reports the end of a
- * transition.
- *
- * SceneTransitionEnded is the signal rather than the scene-changed events
- * because it is the last of them: OBS moves preview a few milliseconds before
- * it, and puts the new scene on program a few milliseconds after. Waiting for
- * the end of the whole thing is what makes a restore stick.
- */
-func (c *Client) awaitTransition() chan struct{} {
-	ch := make(chan struct{})
-	c.mu.Lock()
-	c.transitionWaiters = append(c.transitionWaiters, ch)
-	c.mu.Unlock()
-	return ch
-}
-
-// forgetTransition drops a waiter nobody is listening to any more. A waiter
-// left behind would be closed by the next transition, whoever caused it.
-func (c *Client) forgetTransition(ch chan struct{}) {
-	if ch == nil {
-		return
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for i, w := range c.transitionWaiters {
-		if w == ch {
-			c.transitionWaiters = append(c.transitionWaiters[:i], c.transitionWaiters[i+1:]...)
-			return
-		}
-	}
-}
-
-// transitionDone releases everything waiting on a transition. Callers hold the
-// lock.
-func (c *Client) transitionDone() {
-	for _, ch := range c.transitionWaiters {
-		close(ch)
-	}
-	c.transitionWaiters = nil
-}
-
 func (c *Client) SetPreviewScene(name string) error {
 	obs := c.client()
 	if obs == nil {
 		return errNotConnected
 	}
 	c.resetFade(obs)
-	return c.setPreviewScene(obs, name)
-}
-
-// setPreviewScene stages a scene and records it straight away, rather than
-// waiting for OBS to say so. A chain that stages one scene and then cuts to
-// another runs faster than the event comes back, and the cut would otherwise
-// read a preview scene from before the step that just ran and restore that.
-func (c *Client) setPreviewScene(obs *goobs.Client, name string) error {
-	if _, err := obs.Scenes.SetCurrentPreviewScene(
-		scenes.NewSetCurrentPreviewSceneParams().WithSceneName(name)); err != nil {
-		return err
-	}
-	c.mu.Lock()
-	c.state.PreviewScene = name
-	c.mu.Unlock()
-	return nil
+	_, err := obs.Scenes.SetCurrentPreviewScene(
+		scenes.NewSetCurrentPreviewSceneParams().WithSceneName(name))
+	return err
 }
 
 func (c *Client) Transition() error {
